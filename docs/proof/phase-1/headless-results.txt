@@ -1,0 +1,26 @@
+
+> dao-den-long@0.0.0 test
+> node --test
+
+✔ tick 0 comes before input, yaw and move persist across partial frames (101.5351ms)
+✔ zero ticks and sparse snapshots follow the specified output schedule (210.4091ms)
+✔ invalid input and scenario files return code 2 with a stderr message (575.7941ms)
+✔ scenario overrides only the named lantern and awards no points during setup (79.1138ms)
+✔ pickup occurs at the inclusive XZ boundary and honors carry capacity (77.9686ms)
+✔ jump is edge-triggered and lands while the key remains held (82.1314ms)
+✔ holding interact does not deposit again until released and pressed (84.1747ms)
+✔ pulse costs light, pushes and stuns named shades, and enforces cooldown (79.3067ms)
+✔ shade contact and invulnerability lead to no-flames and stop early (78.8875ms)
+✔ a lit lantern protects the player and keeps shades outside its safe radius (78.8974ms)
+✔ lighting the last lantern stops early and awards win score once (82.9245ms)
+✔ dawn produces game_over and stops before the requested tick limit (81.2274ms)
+✔ same seed yields identical JSONL including spawned shade IDs (266.6003ms)
+✔ a full default seeded night can be won by gathering motes and visiting all lanterns (127.1324ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2141.0913
