@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 4 · Contract v1.3 · v1.0.0
+
+- Thêm benchmark đồ họa 1280×720 và soak test 10 đêm. Ghép nhóm render Bóng Mực, đom đóm và quầng sáng.
+- Thêm bảng xếp hạng Top 10 cục bộ, lưu qua các lần mở và xuất JSON từ dòng lệnh.
+- Thêm đổi phím có kiểm tra trùng, chỉ báo hình ảnh, giảm chuyển động và chữ lớn.
+- Thêm bản ZIP chạy được, hướng dẫn cài, video demo và retro.
+
 ## Phase 3 · Contract v1.2
 
 ### Thay đổi phá vỡ tương thích

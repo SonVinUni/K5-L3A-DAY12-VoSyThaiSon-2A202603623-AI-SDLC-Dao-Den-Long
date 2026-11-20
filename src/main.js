@@ -2,8 +2,9 @@ import './style.css'
 import { createWorld } from './world.js'
 import { createSound } from './sound.js'
 import { nightResult } from './campaign.js'
+import { actions, assignBinding, controlCode, defaults, keyLabel, readBindings } from './key-bindings.js'
 import { capacity, dawnTarget, ignitionCost, isWeakLantern, lanternFuel } from './lanterns.js'
-import { distance, defaultInput, HZ, nearbyLantern, newGame, stepGame, tuning } from './simulation.js'
+import { distance, defaultInput, HZ, nearbyLantern, newGame, START_SEED, stepGame, tuning } from './simulation.js'
 
 const ui = Object.fromEntries([...document.querySelectorAll('[id]')].map((node) => [node.id, node]))
 const optionsKey = 'dao-den-long.settings.v1'
@@ -14,15 +15,25 @@ function readOptions() {
     const value = JSON.parse(localStorage.getItem(optionsKey)) ?? {}
     return { volume: clamp(Number(value.volume ?? .48) || 0, 0, 1),
       sensitivity: clamp(Number(value.sensitivity ?? 1) || 1, .25, 2),
-      accessiblePalette: value.accessiblePalette === true }
+      accessiblePalette: value.accessiblePalette === true,
+      reducedMotion: value.reducedMotion === true, largeText: value.largeText === true,
+      bindings: readBindings(value.bindings) }
   } catch {
-    return { volume: .48, sensitivity: 1, accessiblePalette: false }
+    return { volume: .48, sensitivity: 1, accessiblePalette: false,
+      reducedMotion: false, largeText: false, bindings: { ...defaults } }
   }
 }
 
+const parameters = new URLSearchParams(location.search)
 let world
 try {
-  world = createWorld(ui.world)
+  if (parameters.has('benchmark')) {
+    ui.game.dataset.screen = 'bench'
+    import('./benchmark.js').then(({ startBenchmark }) =>
+      startBenchmark(ui.world, Number(parameters.get('seed')), Number(parameters.get('duration'))))
+      .then((result) => { window.lanternBenchResult = result })
+      .catch((error) => { window.lanternBenchError = error.message })
+  } else world = createWorld(ui.world)
 } catch (error) {
   console.error(error)
   ui['overlay-title'].textContent = 'Không mở được game 3D'
@@ -36,6 +47,9 @@ function runGame() {
   let night = 1
   let mode = 'menu'
   let previousMenu
+  let rebinding = null
+  let scorePending
+  let lastSpawn
   let totalScore = 0
   let result
   let yaw = 0
@@ -70,16 +84,31 @@ function runGame() {
   }
 
   window.addEventListener('keydown', (event) => {
-    if (['Escape', 'KeyP'].includes(event.code) && !event.repeat && ['playing', 'paused'].includes(mode)) {
+    if (mode === 'settings' && rebinding) {
+      event.preventDefault()
+      if (event.repeat) return
+      const next = assignBinding(options.bindings, rebinding, event.code)
+      if (next.error) {
+        ui['binding-status'].textContent = next.error
+        return
+      }
+      options.bindings = next.bindings
+      rebinding = null
+      ui['binding-status'].textContent = 'Đã lưu phím.'
+      saveOptions()
+      return
+    }
+    const code = controlCode(options.bindings, event.code)
+    if (code === 'Escape' && !event.repeat && ['playing', 'paused'].includes(mode)) {
       event.preventDefault()
       togglePause()
-    } else if (recognized.has(event.code) && mode === 'playing') {
+    } else if (code && recognized.has(code) && mode === 'playing') {
       event.preventDefault()
-      keys.add(event.code)
-      if (actionKeys.has(event.code) && !event.repeat) queued.add(event.code)
+      keys.add(code)
+      if (actionKeys.has(code) && !event.repeat) queued.add(code)
     }
   })
-  window.addEventListener('keyup', ({ code }) => keys.delete(code))
+  window.addEventListener('keyup', ({ code }) => keys.delete(controlCode(options.bindings, code)))
   window.addEventListener('blur', clearControls)
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && mode === 'playing') togglePause()
@@ -113,6 +142,100 @@ function runGame() {
     world.canvas.addEventListener(event, () => { dragStart = undefined })
   }
 
+  const bindingButtons = new Map()
+  for (const [action, label] of actions) {
+    const row = document.createElement('div')
+    row.className = 'binding-row'
+    const caption = document.createElement('span')
+    caption.textContent = label
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'secondary-button'
+    button.addEventListener('click', () => {
+      rebinding = rebinding === action ? null : action
+      ui['binding-status'].textContent = rebinding ? 'Bấm phím mới cho ' + label + '.' : ''
+      displayBindings()
+    })
+    row.append(caption, button)
+    ui.bindings.append(row)
+    bindingButtons.set(action, { label, button })
+  }
+
+  function displayBindings() {
+    for (const [action, { label, button }] of bindingButtons) {
+      const key = keyLabel(options.bindings[action])
+      button.textContent = rebinding === action ? 'Chọn…' : key
+      button.setAttribute('aria-label', label + ' · ' + key)
+    }
+    for (const key of document.querySelectorAll('[data-binding]')) {
+      key.textContent = keyLabel(options.bindings[key.dataset.binding])
+    }
+  }
+  ui['reset-bindings'].addEventListener('click', () => {
+    options.bindings = { ...defaults }
+    rebinding = null
+    ui['binding-status'].textContent = 'Đã khôi phục phím mặc định.'
+    saveOptions()
+  })
+
+  async function requestEntries(entry) {
+    const response = await fetch('/api/leaderboard', entry ? {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry),
+    } : {})
+    const payload = await response.json()
+    if (!response.ok) throw new Error(payload.error ?? 'Không thể mở bảng xếp hạng.')
+    return payload.entries
+  }
+
+  ui.leaderboard.addEventListener('click', async () => {
+    showScreen('leaderboard', 'Top 10', 'Bảng xếp hạng', '', '')
+    ui['leaderboard-back'].focus()
+    ui['leaderboard-entries'].replaceChildren()
+    ui['leaderboard-status'].textContent = 'Đang tải…'
+    try {
+      const entries = await requestEntries()
+      for (const row of entries) {
+        const item = document.createElement('li')
+        item.textContent = row.name + ' · ' + row.nights_won + '/3 đêm'
+        const points = document.createElement('span')
+        points.textContent = row.score.toLocaleString('vi-VN')
+        item.append(points)
+        ui['leaderboard-entries'].append(item)
+      }
+      ui['leaderboard-status'].textContent = entries.length ? '' : 'Chưa có điểm đã lưu.'
+    } catch {
+      ui['leaderboard-status'].textContent = 'Không mở được bảng xếp hạng cục bộ.'
+    }
+  })
+
+  ui['leaderboard-back'].addEventListener('click', showMenu)
+
+  function offerScore(nightsWon) {
+    scorePending = { score: totalScore, nights_won: nightsWon, seed: START_SEED }
+    ui['score-form'].hidden = false
+    ui['save-score'].disabled = false
+    ui['player-name'].disabled = false
+    ui['score-status'].textContent = ''
+  }
+
+  ui['score-form'].addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const entry = scorePending
+    if (!entry) return
+    ui['save-score'].disabled = true
+    try {
+      await requestEntries({ ...entry, name: ui['player-name'].value.trim() })
+      if (scorePending !== entry) return
+      scorePending = null
+      ui['player-name'].disabled = true
+      ui['score-status'].textContent = 'Đã gửi điểm vào bảng xếp hạng.'
+    } catch (error) {
+      if (scorePending !== entry) return
+      ui['save-score'].disabled = false
+      ui['score-status'].textContent = error.message
+    }
+  })
+
   ui.play.addEventListener('click', () => {
     audio.enable()
     if (mode === 'paused') return togglePause()
@@ -123,6 +246,7 @@ function runGame() {
       if (result.next !== null) return introduce(result.next)
       showScreen('dawn', 'Ba hòn đảo đã sáng', 'Bình Minh',
         'Ông Đăng: Ngày mới đến rồi, Mây à. Tổng điểm của ba đêm: ' + totalScore + '.', 'Về menu')
+      offerScore(3)
     }
   })
   ui.retry.addEventListener('click', () => introduce(night))
@@ -137,6 +261,8 @@ function runGame() {
   ui.volume.value = String(Math.round(options.volume * 100))
   ui.sensitivity.value = String(Math.round(options.sensitivity * 100))
   ui['accessible-palette'].checked = options.accessiblePalette
+  ui['reduced-motion'].checked = options.reducedMotion
+  ui['large-text'].checked = options.largeText
   const saveOptions = () => {
     options.volume = Number(ui.volume.value) / 100
     options.sensitivity = Number(ui.sensitivity.value) / 100
@@ -149,16 +275,26 @@ function runGame() {
       world.setAccessiblePalette(palette)
       previousHud = ''
     }
+    options.reducedMotion = ui['reduced-motion'].checked
+    options.largeText = ui['large-text'].checked
+    ui.game.dataset.reducedMotion = String(options.reducedMotion)
+    ui.game.dataset.largeText = String(options.largeText)
+    world.setReducedMotion(options.reducedMotion)
+    displayBindings()
     audio.setVolume(options.volume)
     try { localStorage.setItem(optionsKey, JSON.stringify(options)) } catch {}
   }
   ui.volume.addEventListener('input', saveOptions)
   ui.sensitivity.addEventListener('input', saveOptions)
   ui['accessible-palette'].addEventListener('change', saveOptions)
+  ui['reduced-motion'].addEventListener('change', saveOptions)
+  ui['large-text'].addEventListener('change', saveOptions)
   saveOptions()
 
   function setScreen(next) {
     mode = next
+    rebinding = null
+    scorePending = null
     ui.game.dataset.screen = next
     ui.overlay.hidden = next === 'playing'
     ui.pause.disabled = next !== 'playing'
@@ -180,6 +316,9 @@ function runGame() {
     ui.play.hidden = !primary
     ui.retry.hidden = next !== 'paused'
     ui.settings.hidden = !['menu', 'paused'].includes(next)
+    ui.leaderboard.hidden = next !== 'menu'
+    ui['leaderboard-panel'].hidden = next !== 'leaderboard'
+    ui['score-form'].hidden = true
     ui.home.hidden = !['paused', 'result'].includes(next)
     ui['settings-panel'].hidden = next !== 'settings'
     if (next === 'settings') ui.volume.focus()
@@ -196,7 +335,8 @@ function runGame() {
 
   function prepare(number) {
     night = number
-    game = newGame(42, {}, night)
+    game = newGame(START_SEED, {}, night)
+    lastSpawn = null
     yaw = 0
     noticeUntil = 0
     previousSecond = null
@@ -245,7 +385,10 @@ function runGame() {
       case 'fuel_drain': noticeText = 'Bóng Mực đang hút dầu ở ' + event.data.lantern_id + '.'; break
       case 'player_hit': noticeText = event.data.by === 'fall' ? 'Mây đã rơi xuống biển mây.' : 'Bóng Mực đã chạm vào Mây!'; break
       case 'pulse': noticeText = 'Mây đã Tỏa Sáng.'; break
-      case 'shade_spawned': noticeText = 'Bóng Mực xuất hiện trong sương.'; break
+      case 'shade_spawned':
+        lastSpawn = { id: event.data.id, until: now + 4 }
+        noticeText = 'Bóng Mực xuất hiện trong sương.'
+        break
       case 'drifter_steal': noticeText = 'Gió Lạc vừa cướp ' + event.data.amount + ' đom đóm.'; break
       case 'charm_picked': noticeText = 'Bùa Gió đang có hiệu lực.'; break
       case 'game_over': showResult(event.data.reason); return
@@ -264,6 +407,7 @@ function runGame() {
       : reason === 'dawn' ? 'Khi bình minh đến, số đèn đang sáng chưa đủ.' : 'Mây đã mất hết Ngọn Lửa.'
     showScreen('result', 'Đêm ' + night + ' · ' + game.map.name, title,
       description + ' Điểm đêm này: ' + game.score + '. Tổng điểm các đêm đã thắng: ' + totalScore + '.', result.label)
+    if (!won) offerScore(night - 1)
   }
 
   function updateHud(now) {
@@ -315,9 +459,10 @@ function runGame() {
       const low = game.lanterns.find(isWeakLantern)
       const warning = options.accessiblePalette ? '⚠ ' : ''
       if (lantern && !game.player.respawn) {
+        const command = keyLabel(options.bindings.interact) + ' — '
         prompt = lantern.lit
-          ? (isWeakLantern(lantern) ? warning : '') + 'E — Châm dầu (' + lanternFuel(lantern).toFixed(1) + '/100)'
-          : 'E — Nạp ánh sáng (' + lantern.deposited + '/' + ignitionCost(lantern) + ')'
+          ? (isWeakLantern(lantern) ? warning : '') + command + 'Châm dầu (' + lanternFuel(lantern).toFixed(1) + '/100)'
+          : command + 'Nạp ánh sáng (' + lantern.deposited + '/' + ignitionCost(lantern) + ')'
       } else if (now < noticeUntil) prompt = noticeText
       else if (low) prompt = warning + 'Đèn ' + low.id + ' đang ít dầu.'
     }
@@ -376,6 +521,34 @@ function runGame() {
     }
   }
 
+  function updateSubtitles(now) {
+    const arrow = ui['shade-arrow']
+    if (mode !== 'playing') {
+      arrow.hidden = true
+      ui.subtitles.textContent = ''
+      return
+    }
+    const messages = []
+    const shade = lastSpawn && now < lastSpawn.until ? game.shades.find(({ id }) => id === lastSpawn.id) : null
+    arrow.hidden = !shade
+    if (shade) {
+      messages.push('Bóng Mực xuất hiện.')
+      const marker = world.projectTarget(shade.pos)
+      const angle = marker.angle * Math.PI / 180
+      arrow.style.left = clamp(50 + 48 * Math.sin(angle), 9, 91) + '%'
+      arrow.style.top = clamp(50 - 48 * Math.cos(angle), 9, 91) + '%'
+      arrow.firstElementChild.style.transform = 'rotate(' + marker.angle + 'deg)'
+    }
+    if (game.wind.warning) messages.push('Gió mạnh sắp thổi.')
+    const seconds = Math.ceil(game.time_left_s)
+    if (seconds > 0 && seconds <= 10) messages.push('Còn ' + seconds + ' giây.')
+    const weak = game.lanterns.filter(isWeakLantern)
+    if (weak.length) messages.push((options.accessiblePalette ? '⚠ ' : '') +
+      'Ít dầu · ' + weak.map(({ id }) => id).join(', ') + '.')
+    const text = messages.join(' ')
+    if (ui.subtitles.textContent !== text) ui.subtitles.textContent = text
+  }
+
   function frame(timestamp) {
     const now = timestamp / 1000
     const elapsed = Math.max(0, Math.min(.15, now - previousTime))
@@ -417,6 +590,7 @@ function runGame() {
     }
     world.draw(game, yaw, now, mode === 'settings' && previousMenu === 'menu' ? 'menu' : mode)
     updateGuide()
+    updateSubtitles(now)
     requestAnimationFrame(frame)
   }
 

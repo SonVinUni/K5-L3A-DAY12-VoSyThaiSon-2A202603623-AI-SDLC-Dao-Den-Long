@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { createActorBatches } from './actor-batches.js'
 import { HZ, tuning } from './simulation.js'
 import { isSafeLantern, isWeakLantern } from './lanterns.js'
 import { maps, ramps, surface } from './maps.js'
@@ -129,16 +130,6 @@ function makePlayer(texture) {
   return { group, legs, torso }
 }
 
-function makeShade(texture, shadeColor) {
-  const group = new THREE.Group()
-  const body = put(group, sphere, clay(0x120a1a), [0, 0, 0], [.59, .69, .52])
-  put(group, new THREE.ConeGeometry(.45, .86, 7), clay(0x302144), [0, -.57, 0]).rotation.z = Math.PI
-  const eyes = [-1, 1].map((side) => put(group, sphere, unlit(shadeColor),
-    [side * .17, .06, .46], [.09, .105, .055]))
-  const haze = glow(group, texture, shadeColor, 3.4, .43, [0, .06, 0])
-  return { group, body, eyes, haze }
-}
-
 function makeIsland(scene, texture, night) {
   const deck = new THREE.Group()
   scene.add(deck)
@@ -247,9 +238,9 @@ function makeSky(scene, texture) {
   }
 }
 
-export function createWorld(host) {
+export function createWorld(host, { pixelRatio } = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.65))
+  renderer.setPixelRatio(pixelRatio ?? Math.min(window.devicePixelRatio, 1.65))
   renderer.setClearColor(0x0e1430)
   host.append(renderer.domElement)
   const scene = new THREE.Scene()
@@ -275,8 +266,8 @@ export function createWorld(host) {
     scene.add(group)
     return buildLantern(group, texture, index)
   })
-  const motes = new Map()
-  const shades = new Map()
+  const actors = createActorBatches(scene, texture, sphere)
+  let reducedMotion = false
   const ribbons = new Map()
   const tokens = new Map()
   const silk = clay(0x8fa3b8)
@@ -328,7 +319,7 @@ export function createWorld(host) {
     player.legs[0].rotation.x = stride
     player.legs[1].rotation.x = -stride
     player.torso.rotation.x = walking ? .09 : 0
-    player.group.visible = time - hitAt > .85 || Math.floor(time * 17) % 2 === 0
+    player.group.visible = reducedMotion || time - hitAt > .85 || Math.floor(time * 17) % 2 === 0
 
     let count = 0
     for (const [index, lantern] of game.lanterns.entries()) {
@@ -352,49 +343,6 @@ export function createWorld(host) {
     }
     skyLight.intensity = .15 + .55 * count / game.lanterns.length
     bounce.intensity = .85
-
-    for (const { id, pos } of game.motes.values()) {
-      let mote = motes.get(id)
-      if (!mote) {
-        mote = new THREE.Group()
-        put(mote, sphere, hot, [0, 0, 0], [.145, .145, .145])
-        glow(mote, texture, 0xffe58a, 1.8, .82, [0, 0, 0])
-        motes.set(id, mote)
-        scene.add(mote)
-      }
-      const offset = Number(id.slice(1)) * 1.13
-      mote.position.set(pos[0], pos[1] + .66 + Math.sin(time * 3 + offset) * .19, pos[2])
-      mote.scale.setScalar(.78 + .21 * Math.sin(time * 4 + offset))
-    }
-    for (const [id, mote] of motes) {
-      if (game.motes.has(id)) continue
-      scene.remove(mote)
-      mote.children[1].material.dispose()
-      motes.delete(id)
-    }
-
-    const activeShades = new Set()
-    for (const shade of game.shades) {
-      activeShades.add(shade.id)
-      let visual = shades.get(shade.id)
-      if (!visual) {
-        visual = makeShade(texture, shadeColor)
-        shades.set(shade.id, visual)
-        scene.add(visual.group)
-      }
-      visual.group.position.set(shade.pos[0], shade.pos[1] + .14 * Math.sin(time * 4), shade.pos[2])
-      visual.group.rotation.y = Math.atan2(actor.pos[0] - shade.pos[0], actor.pos[2] - shade.pos[2])
-      visual.body.material.color.setHex(shade.state === 'stunned' ? 0x3a3450 : 0x120a1a)
-      visual.body.scale.y = shade.state === 'stunned' ? .46 : .69
-      visual.haze.material.opacity = shade.state === 'stunned' ? .18 : .43
-    }
-    for (const [id, visual] of shades) {
-      if (activeShades.has(id)) continue
-      scene.remove(visual.group)
-      for (const object of visual.group.children) object.material?.dispose()
-      shades.delete(id)
-    }
-
 
     for (const drifter of game.drifters) {
       let ribbon = ribbons.get(drifter.id)
@@ -449,19 +397,24 @@ export function createWorld(host) {
     }
 
     const [x, y, z] = actor.pos
-    if (mode === 'intro' || mode === 'menu') {
+    if (mode === 'bench') {
+      cameraPosition.set(30 * Math.cos(yaw), 15, -30 * Math.sin(yaw))
+      aim.set(0, 0, 0)
+    } else if (mode === 'intro' || mode === 'menu') {
       aim.set(game.night === 2 ? 33 : 1, .6, 4)
-      cameraPosition.set((game.night === 2 ? -3 : -38) + Math.sin(time * .18) * 4, 28, -46)
+      cameraPosition.set((game.night === 2 ? -3 : -38) + (reducedMotion ? 0 : Math.sin(time * .18) * 4), 28, -46)
     } else {
       cameraPosition.set(x - Math.sin(yaw) * 8.6, Math.max(-4, y) + 5.9, z - Math.cos(yaw) * 8.6)
       aim.set(x + Math.sin(yaw) * 3, Math.max(-5, y) + 1.1, z + Math.cos(yaw) * 3)
     }
-    if (mode === lastMode) camera.position.lerp(cameraPosition, .14)
+    if (mode === lastMode && mode !== 'bench' && !reducedMotion) camera.position.lerp(cameraPosition, .14)
     else camera.position.copy(cameraPosition)
     lastMode = mode
     camera.lookAt(aim)
     for (const visual of lanternMeshes) visual.fuelBar.quaternion.copy(camera.quaternion)
+    actors.draw(game, camera, time, shadeColor, reducedMotion)
     renderer.render(scene, camera)
+    if (mode === 'bench') renderer.getContext().finish()
   }
 
   function projectTarget(pos) {
@@ -476,12 +429,13 @@ export function createWorld(host) {
   return {
     projectTarget, canvas: renderer.domElement, draw, recordEvent,
     resetEffects() { pulseAt = hitAt = -10 },
-    setAccessiblePalette(enabled) {
-      shadeColor = enabled ? 0x00b3ff : 0x7a3cff
-      for (const { eyes, haze } of shades.values()) {
-        haze.material.color.setHex(shadeColor)
-        for (const eye of eyes) eye.material.color.setHex(shadeColor)
-      }
+    setAccessiblePalette(enabled) { shadeColor = enabled ? 0x00b3ff : 0x7a3cff },
+    setReducedMotion(enabled) { reducedMotion = enabled },
+    rendererLabel() {
+      const gl = renderer.getContext()
+      const extension = gl.getExtension('WEBGL_debug_renderer_info')
+      const adapter = gl.getParameter(extension ? extension.UNMASKED_RENDERER_WEBGL : gl.RENDERER)
+      return 'Three.js r' + THREE.REVISION + ' / ' + adapter
     },
   }
 }

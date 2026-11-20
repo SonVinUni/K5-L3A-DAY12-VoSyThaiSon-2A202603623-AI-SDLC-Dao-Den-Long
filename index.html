@@ -22,19 +22,21 @@
         <div class="stat totals"><span>Đèn đã thắp</span><strong id="lantern-count">0 / 5</strong><span id="dawn-target">Cần 3 đến bình minh</span><span>Điểm <b id="score">0</b></span></div>
         <div class="stat light"><span>Đom đóm <b id="inventory">0 / 10</b></span><div id="light-progress" class="segments" aria-hidden="true"></div></div>
         <div class="stat abilities" aria-label="Hồi chiêu">
-          <span><kbd>Shift</kbd> Lướt <b id="dash-cd">Sẵn sàng</b></span>
-          <span><kbd>F</kbd> Tỏa Sáng <b id="pulse-cd">Sẵn sàng</b></span>
+          <span><kbd data-binding="dash">Shift</kbd> Lướt <b id="dash-cd">Sẵn sàng</b></span>
+          <span><kbd data-binding="pulse">F</kbd> Tỏa Sáng <b id="pulse-cd">Sẵn sàng</b></span>
           <span id="charm" hidden></span>
         </div>
       </section>
       <div id="guide-arrow" class="guide-arrow" hidden><span aria-hidden="true">↑</span><b id="guide-text"></b></div>
+      <div id="shade-arrow" class="shade-arrow" hidden><span aria-hidden="true">↑</span> Bóng Mực</div>
+      <p id="subtitles" class="subtitles" aria-live="polite"></p>
       <p id="notice" class="notice" aria-live="polite"></p>
       <aside class="map" aria-label="Bản đồ đêm hiện tại"><canvas id="map" width="200" height="145"></canvas><span id="map-label">Đảo Bến</span></aside>
       <footer class="controls" aria-label="Điều khiển">
-        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Di chuyển</span>
-        <span><kbd>Space</kbd> Nhảy</span><span><kbd>Shift</kbd> Lướt</span>
-        <span><kbd>E</kbd> Nạp đèn</span><span><kbd>F</kbd> Tỏa Sáng</span>
-        <span><kbd>Q</kbd><kbd>R</kbd> Xoay camera</span><span><kbd>Esc</kbd> Tạm dừng</span>
+        <span><kbd data-binding="forward">W</kbd><kbd data-binding="left">A</kbd><kbd data-binding="backward">S</kbd><kbd data-binding="right">D</kbd> Di chuyển</span>
+        <span><kbd data-binding="jump">Space</kbd> Nhảy</span><span><kbd data-binding="dash">Shift</kbd> Lướt</span>
+        <span><kbd data-binding="interact">E</kbd> Nạp đèn</span><span><kbd data-binding="pulse">F</kbd> Tỏa Sáng</span>
+        <span><kbd data-binding="cameraLeft">Q</kbd><kbd data-binding="cameraRight">R</kbd> Xoay camera</span><span><kbd data-binding="pause">Esc</kbd> Tạm dừng</span>
       </footer>
       <div class="touch-controls" aria-label="Điều khiển cảm ứng">
         <div class="dpad">
@@ -54,6 +56,7 @@
           <div class="menu-actions">
             <button id="play" class="play-button">Bắt đầu</button>
             <button id="retry" class="secondary-button" hidden>Chơi lại Đêm</button>
+            <button id="leaderboard" class="secondary-button">Bảng xếp hạng</button>
             <button id="settings" class="secondary-button">Cài đặt</button>
             <button id="home" class="secondary-button" hidden>Về menu</button>
           </div>
@@ -65,8 +68,30 @@
             <label class="toggle" for="accessible-palette"><span>Bảng màu dễ phân biệt</span>
               <input id="accessible-palette" type="checkbox">
             </label>
+            <label class="toggle"><span>Giảm chuyển động</span><input id="reduced-motion" type="checkbox"></label>
+            <label class="toggle"><span>Chữ lớn (×1,25)</span><input id="large-text" type="checkbox"></label>
+            <details class="key-settings">
+              <summary>Đổi phím</summary>
+              <div id="bindings" class="binding-list"></div>
+              <p id="binding-status" role="status"></p>
+              <button type="button" id="reset-bindings" class="secondary-button">Khôi phục mặc định</button>
+            </details>
             <button id="back" class="play-button">Quay lại</button>
           </div>
+          <section id="leaderboard-panel" aria-label="Bảng xếp hạng" hidden>
+            <ol id="leaderboard-entries"></ol>
+            <p id="leaderboard-status" role="status"></p>
+            <button id="leaderboard-back" class="play-button">Về menu</button>
+          </section>
+          <form id="score-form" hidden>
+            <label for="player-name">Tên để lưu điểm</label>
+            <div class="score-controls">
+              <input id="player-name" name="player-name" placeholder="Mây_01" minlength="3" maxlength="12"
+                pattern="[A-Za-z0-9_]{3,12}" title="3–12 ký tự A–Z, 0–9 hoặc gạch dưới" required>
+              <button id="save-score" class="secondary-button" type="submit">Lưu điểm</button>
+            </div>
+            <p id="score-status" role="status"></p>
+          </form>
         </div>
       </section>
     </main>

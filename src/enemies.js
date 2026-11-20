@@ -97,6 +97,26 @@ function canReach(game, shade, offset) {
   return false
 }
 
+export function moveWanderingShade(game, shade) {
+  const weak = closestLantern(game.lanterns, shade.pos, isWeakLantern)
+  const target = weak ?? closestLantern(game.lanterns, shade.pos, (lantern) => !lantern.lit)
+  shade.target_lantern_id = target?.id ?? null
+  if (target) {
+    const meters = xz(shade.pos, target.pos)
+    if (weak && meters <= 2 + epsilon) {
+      changeShade(shade, 'drain', weak)
+      return
+    }
+    const stride = Math.min(meters, 1.5 / 60)
+    const moved = canReach(game, shade, direction(shade.pos, target.pos).map((value) => value * stride))
+    if (weak && xz(shade.pos, weak.pos) <= 2 + epsilon) changeShade(shade, 'drain', weak)
+    if (moved) return
+  }
+  if (!moveShade(game, shade, Math.cos(shade.angle) * 1.5 / 60, Math.sin(shade.angle) * 1.5 / 60)) {
+    shade.angle += Math.PI * .67
+  }
+}
+
 export function moveEnemies(game) {
   const player = game.player
   for (const shade of game.shades) {
@@ -137,23 +157,7 @@ export function moveEnemies(game) {
       continue
     }
 
-    const weak = closestLantern(game.lanterns, shade.pos, isWeakLantern)
-    const target = weak ?? closestLantern(game.lanterns, shade.pos, (lantern) => !lantern.lit)
-    shade.target_lantern_id = target?.id ?? null
-    if (target) {
-      const meters = xz(shade.pos, target.pos)
-      if (weak && meters <= 2 + epsilon) {
-        changeShade(shade, 'drain', weak)
-        continue
-      }
-      const stride = Math.min(meters, 1.5 / 60)
-      const moved = canReach(game, shade, direction(shade.pos, target.pos).map((value) => value * stride))
-      if (weak && xz(shade.pos, weak.pos) <= 2 + epsilon) changeShade(shade, 'drain', weak)
-      if (moved) continue
-    }
-    if (!moveShade(game, shade, Math.cos(shade.angle) * 1.5 / 60, Math.sin(shade.angle) * 1.5 / 60)) {
-      shade.angle += Math.PI * .67
-    }
+    moveWanderingShade(game, shade)
   }
 
   for (const drifter of game.drifters) {

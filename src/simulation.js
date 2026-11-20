@@ -12,7 +12,7 @@ export const defaultInput = { move: [0, 0], cam_yaw_deg: 0, jump: false, interac
 export const distance = xz
 const epsilon = 1e-8
 
-function seededRandom(seed) {
+export function seededRandom(seed) {
   let state = seed >>> 0
   return () => {
     state = (state + 0x6D2B79F5) >>> 0

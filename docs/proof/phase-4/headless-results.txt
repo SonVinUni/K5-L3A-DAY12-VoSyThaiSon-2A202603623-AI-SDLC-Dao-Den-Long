@@ -1,0 +1,53 @@
+
+> dao-den-long@1.0.0 test
+> node --test
+
+✔ campaign keeps only won scores, advances through all islands, and ends at dawn (1.5355ms)
+✔ tick 0 precedes input and partial frames retain their previous fields (150.6043ms)
+✔ zero ticks and sparse snapshots preserve the JSONL schedule (276.4961ms)
+✔ malformed files produce stderr and exit 2 (911.6125ms)
+✔ scenario setup updates only the designated lantern and emits no events at tick 0 (116.6789ms)
+✔ pickup honors inclusive XZ and height bounds, carry capacity, and scores only when depositing (111.1474ms)
+✔ jump is edge-triggered and lands while the key remains held (126.049ms)
+✔ interaction breaks ties by ID and requires a new press to refuel (120.5194ms)
+✔ pulse respects 3D range, pushes over 15 ticks, stuns and enforces cooldown (112.2432ms)
+✔ contacts choose the first shade by ID, drop half of carried motes and grant invulnerability (112.9182ms)
+✔ lit lantern keeps shades outside after 30 ticks and suppresses contact during evacuation (118.4884ms)
+✔ dawn is resolved after lighting while no flames still causes an immediate loss (355.9401ms)
+✔ same seed produces byte-identical JSONL and spawning IDs; different seed changes the run (354.9024ms)
+✔ three nights use standard maps, timers, IDs, and structured snapshots after the v1.2 upgrade (420.21ms)
+✔ pause holds simulation, motion and all duration counters while wall ticks advance (133.5107ms)
+✔ dash covers 2.8 m in 12 ticks, preserves altitude and re-arms after 90 simulated ticks (137.4361ms)
+✔ fall ignores invulnerability, loses all light once, and respawns after 60 simulated ticks (126.3662ms)
+✔ if all lamps are set but the last flame is lost on the same step, loss wins (125.003ms)
+✔ a drifter steals before a shade hits, and stolen light can be recovered by pulse (123.5387ms)
+✔ Gió Lạc spawns at simulation tick 1200, never at that wall tick during pause (178.5508ms)
+✔ Bùa Gió has 600 ticks, grants 7.2 m/s and allows edge-triggered dash without cooldown (118.0906ms)
+✔ Bùa Gió refreshes and dropped motes expire at the configured simulation ticks (110.936ms)
+✔ Đảo Cau pad traverses the gap while held movement cannot overwrite launch; bridge stays walkable (262.1311ms)
+✔ Đảo Chuông allows ramp traversal and pad landing on the upper disk; its wall blocks walking up (355.5906ms)
+✔ gió mạnh starts at simulation tick 1800, pushes at 2 m/s and expires at 2100 (217.1741ms)
+✔ all lamps lit does not end early, and dawn uses the threshold for each night (955.4872ms)
+✔ fuel exhausted on the dawn tick is removed from the count; the same tick may relight it (254.1238ms)
+✔ losing the last flame on the dawn tick overrides a surviving majority of lamps (102.5458ms)
+✔ safe zone uses the exact 30-fuel boundary before snapshot rounding (234.4415ms)
+✔ restoring a lamp with multiple shades evacuates rather than harming Mây (130.1415ms)
+✔ capacity increases at lighting, affects pickup only from the next tick, and is capped (230.4381ms)
+✔ drain adds five units per second per shade and emits per shade every 60 active ticks (116.4279ms)
+✔ wander chooses the nearest weak lamp by ID; chase keeps the player as its target (112.6997ms)
+✔ a draining shade chases within six meters; hitting a draining shade scores fifteen (254.7492ms)
+✔ full lamps are not selected during interaction and fractional fuel arithmetic is bounded (1.7463ms)
+✔ pause stops lamp fuel and the drain cadence, and repeated runs are byte-identical (236.0145ms)
+✔ benchmark uses the specified slowest-one-percent mean and nearest-rank p95 (2.0459ms)
+✔ standard benchmark keeps 200 wandering shades, 100 grounded motes, and three full lamps (162.2383ms)
+✔ soak runs ten seeded nights and records a result for each without errors (503.8071ms)
+✔ key binding changes detect duplicates and leave unaffected default aliases usable (0.9652ms)
+✔ web leaderboard is persistent, validates names, sorts ties, and exports the same top ten (261.6032ms)
+ℹ tests 41
+ℹ suites 0
+ℹ pass 41
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3122.3144
