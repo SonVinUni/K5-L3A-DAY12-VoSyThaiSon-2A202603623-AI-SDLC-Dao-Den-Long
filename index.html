@@ -3,54 +3,67 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Cùng Mây thu thập đom đóm và thắp sáng Đảo Bến.">
-    <meta name="theme-color" content="#100f20">
+    <meta name="description" content="Giúp Mây thắp sáng ba hòn đảo trước bình minh.">
+    <meta name="theme-color" content="#0E1430">
     <title>Đảo Đèn Lồng</title>
   </head>
   <body>
-    <main id="game">
+    <main id="game" data-screen="menu">
       <div id="world" aria-hidden="true"></div>
       <div class="vignette" aria-hidden="true"></div>
       <header class="topbar">
         <div class="brand"><span class="brand-mark" aria-hidden="true">✧</span><span>Đảo Đèn Lồng</span></div>
-        <span class="chapter">Đêm 1 · Đảo Bến</span>
+        <span class="chapter" id="chapter">Ba hòn đảo</span>
         <button class="icon-button" id="pause" aria-label="Tạm dừng" title="Tạm dừng" disabled>Ⅱ</button>
       </header>
       <section class="hud" aria-label="Trạng thái trò chơi">
-        <div class="stat"><span>Đèn đã thắp</span><strong id="lantern-count">0 / 5</strong><div id="lantern-progress" class="segments" aria-hidden="true"></div></div>
-        <div class="stat"><span>Đom đóm</span><strong id="inventory">0 / 12</strong></div>
-        <div class="stat"><span>Sinh lực</span><strong id="health" class="health" aria-label="3 sinh lực">♥ ♥ ♥</strong></div>
-        <div class="stat"><span>Đến bình minh</span><strong id="clock">05:00</strong></div>
-        <div class="stat"><span>Điểm</span><strong id="score">0</strong></div>
+        <div class="stat flames"><span>Ngọn Lửa</span><strong id="health" class="health" aria-label="3 Ngọn Lửa">♥ ♥ ♥</strong></div>
+        <div class="stat timer"><span>Đến bình minh</span><strong id="clock">05:00</strong></div>
+        <div class="stat totals"><span>Đèn đã thắp</span><strong id="lantern-count">0 / 5</strong><span>Điểm <b id="score">0</b></span></div>
+        <div class="stat light"><span>Đom đóm <b id="inventory">0 / 10</b></span><div id="light-progress" class="segments" aria-hidden="true"></div></div>
+        <div class="stat abilities" aria-label="Hồi chiêu">
+          <span><kbd>Shift</kbd> Lướt <b id="dash-cd">Sẵn sàng</b></span>
+          <span><kbd>F</kbd> Tỏa Sáng <b id="pulse-cd">Sẵn sàng</b></span>
+          <span id="charm" hidden></span>
+        </div>
       </section>
+      <div id="guide-arrow" class="guide-arrow" hidden><span aria-hidden="true">↑</span><b id="guide-text"></b></div>
       <p id="notice" class="notice" aria-live="polite"></p>
-      <aside class="map" aria-label="Bản đồ Đảo Bến"><canvas id="map" width="200" height="200"></canvas><span>Đảo Bến</span></aside>
+      <aside class="map" aria-label="Bản đồ đêm hiện tại"><canvas id="map" width="200" height="145"></canvas><span id="map-label">Đảo Bến</span></aside>
       <footer class="controls" aria-label="Điều khiển">
         <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Di chuyển</span>
-        <span><kbd>Space</kbd> Nhảy</span>
-        <span><kbd>E</kbd> Nạp đèn</span>
-        <span><kbd>F</kbd> Tỏa sáng</span>
-        <span><kbd>Q</kbd><kbd>R</kbd> Xoay camera</span>
+        <span><kbd>Space</kbd> Nhảy</span><span><kbd>Shift</kbd> Lướt</span>
+        <span><kbd>E</kbd> Nạp đèn</span><span><kbd>F</kbd> Tỏa Sáng</span>
+        <span><kbd>Q</kbd><kbd>R</kbd> Xoay camera</span><span><kbd>Esc</kbd> Tạm dừng</span>
       </footer>
       <div class="touch-controls" aria-label="Điều khiển cảm ứng">
         <div class="dpad">
-          <button data-key="KeyW" aria-label="Đi tới">↑</button>
-          <button data-key="KeyA" aria-label="Đi trái">←</button>
-          <button data-key="KeyS" aria-label="Đi lùi">↓</button>
-          <button data-key="KeyD" aria-label="Đi phải">→</button>
+          <button data-key="KeyW" aria-label="Đi tới">↑</button><button data-key="KeyA" aria-label="Đi trái">←</button>
+          <button data-key="KeyS" aria-label="Đi lùi">↓</button><button data-key="KeyD" aria-label="Đi phải">→</button>
         </div>
         <div class="actions">
-          <button data-key="Space">Nhảy</button>
-          <button data-key="KeyE">Nạp đèn</button>
-          <button data-key="KeyF">Tỏa sáng</button>
+          <button data-key="Space">Nhảy</button><button data-key="ShiftLeft">Lướt</button>
+          <button data-key="KeyE">Nạp đèn</button><button data-key="KeyF">Tỏa Sáng</button>
         </div>
       </div>
       <section id="overlay" class="overlay" aria-labelledby="overlay-title">
         <div class="panel">
-          <div id="eyebrow" class="eyebrow">Đêm 1 · Đảo Bến</div>
+          <div id="eyebrow" class="eyebrow">Ba hòn đảo</div>
           <h1 id="overlay-title">Đảo Đèn Lồng</h1>
-          <p id="overlay-copy">Cùng Mây nhặt đom đóm và thắp lại năm chiếc đèn trước bình minh. Khi Bóng Mực đến gần, hãy tỏa sáng để xua chúng đi.</p>
-          <button id="play" class="play-button">Chơi ngay</button>
+          <p id="overlay-copy">Cùng Mây mang ánh sáng trở lại Đảo Bến, Đảo Cau và Đảo Chuông trước bình minh.</p>
+          <div class="menu-actions">
+            <button id="play" class="play-button">Bắt đầu</button>
+            <button id="retry" class="secondary-button" hidden>Chơi lại Đêm</button>
+            <button id="settings" class="secondary-button">Cài đặt</button>
+            <button id="home" class="secondary-button" hidden>Về menu</button>
+          </div>
+          <div id="settings-panel" class="settings-panel" hidden>
+            <label for="volume">Âm lượng <output id="volume-value"></output></label>
+            <input id="volume" type="range" min="0" max="100" step="1">
+            <label for="sensitivity">Độ nhạy chuột <output id="sensitivity-value"></output></label>
+            <input id="sensitivity" type="range" min="25" max="200" step="5">
+            <button id="back" class="play-button">Quay lại</button>
+          </div>
         </div>
       </section>
     </main>

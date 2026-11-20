@@ -1,0 +1,5 @@
+Node.js v26.13.1
+Night 3, seed 42, 21600 ticks, snapshot every 10 ticks
+Elapsed seconds: 0.942
+{"type":"end","ticks":21600,"state":"lost","score":0}
+Browser test: Dao Ben, Chromium, 1280x720, 164.6 FPS over a 3-second play window.

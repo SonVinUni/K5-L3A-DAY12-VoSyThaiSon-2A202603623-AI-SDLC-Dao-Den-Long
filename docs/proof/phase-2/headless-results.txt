@@ -1,0 +1,38 @@
+
+> dao-den-long@0.0.0 test
+> node --test
+
+✔ campaign keeps only won scores, advances through all islands, and ends at dawn (2.0265ms)
+✔ tick 0 precedes input and partial frames retain their previous fields (133.4302ms)
+✔ zero ticks and sparse snapshots preserve the JSONL schedule (216.1563ms)
+✔ malformed files produce stderr and exit 2 (706.9409ms)
+✔ scenario setup updates only the designated lantern and emits no events at tick 0 (104.3815ms)
+✔ pickup honors inclusive XZ and height bounds, carry capacity, and scores only when depositing (100.3441ms)
+✔ jump is edge-triggered and lands while the key remains held (100.4907ms)
+✔ deposit chooses the nearest unlit lantern, breaks ties by ID and requires a new press (101.1257ms)
+✔ pulse respects 3D range, pushes over 15 ticks, stuns and enforces cooldown (102.9416ms)
+✔ contacts choose the first shade by ID, drop half of carried motes and grant invulnerability (99.3761ms)
+✔ lit lantern keeps shades outside after 30 ticks and suppresses contact during evacuation (101.8402ms)
+✔ unordered results resolve no flames, then all lamps, then dawn (261.6724ms)
+✔ same seed produces byte-identical JSONL and spawning IDs; different seed changes the run (269.8428ms)
+✔ the default Đảo Bến seed can win all five lamps under v1.1 rules (348.4868ms)
+✔ three nights use standard maps, timers, IDs, and structured v1.1 snapshots (322.855ms)
+✔ pause holds simulation, motion and all duration counters while wall ticks advance (95.6924ms)
+✔ dash covers 2.8 m in 12 ticks, preserves altitude and re-arms after 90 simulated ticks (99.578ms)
+✔ fall ignores invulnerability, loses all light once, and respawns after 60 simulated ticks (90.6509ms)
+✔ if all lamps are set but the last flame is lost on the same step, loss wins (85.2622ms)
+✔ a drifter steals before a shade hits, and stolen light can be recovered by pulse (82.5668ms)
+✔ Gió Lạc spawns at simulation tick 1200, never at that wall tick during pause (129.8795ms)
+✔ Bùa Gió has 600 ticks, grants 7.2 m/s and allows edge-triggered dash without cooldown (97.1871ms)
+✔ Bùa Gió refreshes and dropped motes expire at the configured simulation ticks (96.0762ms)
+✔ Đảo Cau pad traverses the gap while held movement cannot overwrite launch; bridge stays walkable (203.9664ms)
+✔ Đảo Chuông allows ramp traversal and pad landing on the upper disk; its wall blocks walking up (292.2743ms)
+✔ gió mạnh starts at simulation tick 1800, pushes at 2 m/s and expires at 2100 (152.0742ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2849.6043

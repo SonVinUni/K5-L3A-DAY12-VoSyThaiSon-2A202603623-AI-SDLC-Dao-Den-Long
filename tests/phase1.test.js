@@ -1,76 +1,38 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { defaultInput, distance, newGame, stepGame, tuning } from '../src/simulation.js'
 import { test } from 'node:test'
+import { defaultInput, distance, newGame, stepGame, tuning } from '../src/simulation.js'
+import { events, inputs, quiet, run, snapshots } from './helpers/headless.js'
 
-const cli = fileURLToPath(new URL('../src/headless.js', import.meta.url))
-const noRandom = { random_motes: false, random_shades: false }
-const inputs = (...frames) => ({ frames })
-const events = (run) => run.rows.filter(({ type }) => type === 'event')
-const snapshots = (run) => run.rows.filter(({ type }) => type === 'snapshot')
-
-function run({ scenario, frames, ticks = 1, interval = 1, seed = 42 } = {}) {
-  const directory = mkdtempSync(join(tmpdir(), 'lantern-test-'))
-  const output = join(directory, 'out.jsonl')
-  const scenarioFile = join(directory, 'scenario.json')
-  const inputsFile = join(directory, 'inputs.json')
-  const args = [cli, '--seed', String(seed), '--night', '1', '--ticks', String(ticks),
-    '--snapshot-every', String(interval), '--out', output]
-  try {
-    if (scenario !== undefined) {
-      writeFileSync(scenarioFile, JSON.stringify(scenario))
-      args.push('--scenario', scenarioFile)
-    }
-    if (frames !== undefined) {
-      writeFileSync(inputsFile, JSON.stringify(frames))
-      args.push('--inputs', inputsFile)
-    }
-    const result = spawnSync(process.execPath, args, { encoding: 'utf8' })
-    assert.ifError(result.error)
-    if (result.status !== 0) return result
-    const raw = readFileSync(output, 'utf8')
-    const rows = raw.trimEnd().split('\n').map(JSON.parse)
-    return { ...result, raw, rows, end: rows.at(-1) }
-  } finally {
-    for (const file of [output, scenarioFile, inputsFile]) rmSync(file, { force: true })
-    rmdirSync(directory)
-  }
-}
-
-test('tick 0 comes before input, yaw and move persist across partial frames', () => {
-  const result = run({ ticks: 3, scenario: noRandom, frames: inputs(
+test('tick 0 precedes input and partial frames retain their previous fields', () => {
+  const result = run({ ticks: 3, scenario: quiet, frames: inputs(
     { tick: 0, move: [0, 1] }, { tick: 1, cam_yaw_deg: 90 }) })
-  assert.equal(result.status, 0)
   const step = tuning.player_speed / 60
   assert.deepEqual(snapshots(result).map(({ player }) => player.pos), [
     [0, 0, 0], [0, 0, step], [step, 0, step], [step * 2, 0, step],
   ])
-  assert.equal(snapshots(result)[1].time_left_s, tuning.night1_duration_s - 1 / 60)
+  assert.equal(snapshots(result)[1].time_left_s, 300 - 1 / 60)
   assert.deepEqual(result.end, { type: 'end', ticks: 3, state: 'playing', score: 0 })
 })
 
-test('zero ticks and sparse snapshots follow the specified output schedule', () => {
-  const zero = run({ ticks: 0, scenario: noRandom })
-  assert.deepEqual(zero.rows.map((row) => [row.type, row.tick ?? row.ticks]), [['snapshot', 0], ['end', 0]])
-  const sparse = run({ ticks: 21, interval: 10, scenario: noRandom })
+test('zero ticks and sparse snapshots preserve the JSONL schedule', () => {
+  const empty = run({ ticks: 0, scenario: quiet })
+  assert.deepEqual(empty.rows.map((row) => [row.type, row.tick ?? row.ticks]), [['snapshot', 0], ['end', 0]])
+  const sparse = run({ ticks: 21, interval: 10, scenario: quiet })
   assert.deepEqual(snapshots(sparse).map(({ tick }) => tick), [0, 10, 20])
+  assert.deepEqual(sparse.rows[1], { type: 'event', tick: 1, name: 'night_start', data: { night: 1 } })
   assert.equal(sparse.end.ticks, 21)
 })
 
-test('invalid input and scenario files return code 2 with a stderr message', () => {
+test('malformed files produce stderr and exit 2', () => {
   for (const options of [
     { frames: inputs({ tick: 1 }, { tick: 1 }) },
     { frames: inputs({ tick: 1 }, { tick: 0 }) },
     { frames: inputs({ tick: 0, move: [0, 2] }) },
-    { frames: inputs({ tick: 0, interact: 1 }) },
+    { frames: inputs({ tick: 0, dash: 1 }) },
     { scenario: { player: { pos: [0, '0', 0] } } },
     { scenario: { shades: [{ pos: [1, 2] }] } },
     { scenario: { lanterns: [{ id: 'L9' }] } },
-    { scenario: { random_shades: 'false' } },
+    { scenario: { random_drifters: 'false' } },
   ]) {
     const result = run(options)
     assert.equal(result.status, 2)
@@ -78,13 +40,15 @@ test('invalid input and scenario files return code 2 with a stderr message', () 
   }
 })
 
-test('scenario overrides only the named lantern and awards no points during setup', () => {
-  const result = run({ ticks: 0, scenario: { ...noRandom,
+test('scenario setup updates only the designated lantern and emits no events at tick 0', () => {
+  const result = run({ ticks: 0, scenario: { ...quiet, time_left_s: 125,
     player: { pos: [4, 0, 5], carried: 3, flames: 2 },
-    time_left_s: 125, lanterns: [{ id: 'L3', lit: true, pos: [2, 0, 2] }],
+    lanterns: [{ id: 'L3', lit: true, pos: [2, 0, 2] }],
   } })
   const start = result.rows[0]
-  assert.deepEqual(start.player, { pos: [4, 0, 5], carried: 3, flames: 2 })
+  assert.deepEqual(start.player.pos, [4, 0, 5])
+  assert.equal(start.player.carried, 3)
+  assert.equal(start.player.flames, 2)
   assert.equal(start.lanterns.length, 5)
   assert.deepEqual(start.lanterns.filter(({ lit }) => lit).map(({ id, pos }) => [id, pos]), [['L3', [2, 0, 2]]])
   assert.equal(start.time_left_s, 125)
@@ -93,127 +57,144 @@ test('scenario overrides only the named lantern and awards no points during setu
   assert.deepEqual(events(result), [])
 })
 
-test('pickup occurs at the inclusive XZ boundary and honors carry capacity', () => {
-  const result = run({ scenario: { ...noRandom,
-    player: { carried: tuning.carry_capacity - 1 },
-    motes: [[tuning.pickup_radius, 9, 0], [0, 0, 0]],
+test('pickup honors inclusive XZ and height bounds, carry capacity, and scores only when depositing', () => {
+  const result = run({ scenario: { ...quiet, player: { carried: 9 },
+    motes: [[0, 1.501, 0], [1, 1.5, 0], [0, 0, 0]],
   } })
-  assert.equal(snapshots(result)[0].motes_active, 2)
-  assert.deepEqual(events(result), [{ type: 'event', tick: 1, name: 'mote_picked',
-    data: { carried: tuning.carry_capacity } }])
-  assert.equal(snapshots(result)[1].motes_active, 1)
-  assert.equal(result.end.score, tuning.score.per_mote)
+  assert.deepEqual(events(result), [{ type: 'event', tick: 1, name: 'mote_picked', data: { carried: 10 } }])
+  const remaining = snapshots(result)[1].motes
+  assert.deepEqual(remaining.map(({ pos }) => pos), [[0, 1.501, 0], [0, 0, 0]])
+  assert.equal(result.end.score, 0)
 })
 
 test('jump is edge-triggered and lands while the key remains held', () => {
-  const result = run({ ticks: 90, scenario: noRandom, frames: inputs({ tick: 0, jump: true }) })
+  const result = run({ ticks: 90, scenario: quiet, frames: inputs({ tick: 0, jump: true }) })
   const history = snapshots(result)
-  assert.equal(history[0].player.pos[1], 0)
+  assert.equal(history[0].player.grounded, true)
   assert.ok(history[1].player.pos[1] > 0)
   assert.ok(history[15].player.pos[1] > history[1].player.pos[1])
-  assert.ok(history.slice(50).every(({ player }) => player.pos[1] === 0))
+  assert.ok(history.slice(49).every(({ player }) => player.grounded && player.pos[1] === 0))
 })
 
-test('holding interact does not deposit again until released and pressed', () => {
-  const result = run({ ticks: 3, scenario: { ...noRandom,
-    player: { carried: 2 * tuning.lantern_cost },
-    lanterns: [{ id: 'L1', pos: [0, 0, 0] }, { id: 'L2', pos: [1, 0, 0] }],
-  }, frames: inputs({ tick: 0, interact: true }, { tick: 1 }, { tick: 2, interact: false }) })
-  assert.deepEqual(events(result).map(({ tick, name }) => [tick, name]), [[1, 'deposit'], [1, 'lantern_lit']])
-  assert.equal(snapshots(result)[2].player.carried, tuning.lantern_cost)
-})
-
-test('pulse costs light, pushes and stuns named shades, and enforces cooldown', () => {
-  const result = run({ ticks: 5, scenario: { ...noRandom,
-    player: { carried: tuning.pulse_cost * 2 },
-    shades: [{ id: 'test-shade', pos: [tuning.pulse_radius, 1, 0] }],
-  }, frames: inputs({ tick: 0, pulse: true }, { tick: 1, pulse: false }, { tick: 2, pulse: true }) })
+test('deposit chooses the nearest unlit lantern, breaks ties by ID and requires a new press', () => {
+  const result = run({ ticks: 4, scenario: { ...quiet, player: { carried: 10 },
+    lanterns: [{ id: 'L1', pos: [-1, 0, 0], deposited: 8 }, { id: 'L2', pos: [1, 0, 0] }],
+  }, frames: inputs({ tick: 0, interact: true }, { tick: 2, interact: false }, { tick: 3, interact: true }) })
   assert.deepEqual(events(result).map(({ tick, name, data }) => [tick, name, data]), [
-    [1, 'pulse', { stunned_ids: ['test-shade'] }],
+    [1, 'deposit', { lantern_id: 'L1', amount: 2, deposited: 10 }],
+    [1, 'lantern_lit', { lantern_id: 'L1' }],
+    [4, 'deposit', { lantern_id: 'L2', amount: 8, deposited: 8 }],
   ])
-  assert.deepEqual(snapshots(result)[1].shades[0], {
-    id: 'test-shade', pos: [tuning.pulse_radius + tuning.pulse_push_m, 1, 0], state: 'stunned',
-  })
-  assert.equal(snapshots(result).at(-1).player.carried, tuning.pulse_cost)
-  assert.equal(result.end.score, tuning.score.per_stun)
+  assert.equal(result.end.score, 200)
 })
 
-test('shade contact and invulnerability lead to no-flames and stop early', () => {
-  const result = run({ ticks: 500, interval: 50, scenario: { ...noRandom,
-    player: { flames: 2 }, shades: [{ pos: [0, 1, 0] }],
+test('pulse respects 3D range, pushes over 15 ticks, stuns and enforces cooldown', () => {
+  const result = run({ ticks: 16, scenario: { ...quiet, player: { carried: 6 },
+    shades: [{ id: 'S1', pos: [5, .8, 0] }, { id: 'S2', pos: [5, 1, 0] }],
+  }, frames: inputs({ tick: 0, pulse: true }, { tick: 1, pulse: false }, { tick: 2, pulse: true }) })
+  assert.deepEqual(events(result)[0].data, { stunned_ids: ['S1'] })
+  assert.equal(events(result).filter(({ name }) => name === 'pulse').length, 1)
+  const after = snapshots(result)[15]
+  assert.deepEqual(after.shades[0], { id: 'S1', pos: [9, .8, 0], state: 'stunned' })
+  assert.equal(after.player.carried, 3)
+  assert.equal(result.end.score, 5)
+})
+
+test('contacts choose the first shade by ID, drop half of carried motes and grant invulnerability', () => {
+  const result = run({ ticks: 12, scenario: { ...quiet, player: { carried: 7 },
+    shades: [{ id: 'S2', pos: [0, .8, 0] }, { id: 'S1', pos: [0, .8, 0] }],
   } })
-  const lastHit = 1 + tuning.invuln_s * 60
-  assert.deepEqual(events(result).map(({ tick, name }) => [tick, name]), [
-    [1, 'player_hit'], [lastHit, 'player_hit'], [lastHit, 'game_over'],
-  ])
-  assert.deepEqual(events(result).at(-1).data, { result: 'lost', reason: 'no_flames' })
-  assert.equal(result.end.ticks, lastHit)
+  const rows = snapshots(result)
+  assert.deepEqual(events(result), [{ type: 'event', tick: 1, name: 'player_hit',
+    data: { by: 'shade', flames: 2, dropped: 3 } }])
+  assert.equal(rows[1].shades[0].state, 'recoil')
+  assert.equal(rows[1].shades[1].state, 'chase')
+  assert.equal(rows[1].player.invuln, true)
+  assert.equal(rows[1].player.carried, 4)
+  assert.equal(rows[1].motes[0].ttl_s, 8)
 })
 
-test('a lit lantern protects the player and keeps shades outside its safe radius', () => {
-  const result = run({ ticks: 3, scenario: { ...noRandom, shades: [{ pos: [0, 1, 0] }],
+test('lit lantern keeps shades outside after 30 ticks and suppresses contact during evacuation', () => {
+  const result = run({ ticks: 35, scenario: { ...quiet, shades: [{ pos: [0, .8, 0] }],
     lanterns: [{ id: 'L1', lit: true, pos: [0, 0, 0] }],
   } })
   const after = snapshots(result).at(-1)
-  assert.equal(after.player.flames, tuning.flames)
-  assert.ok(Math.hypot(after.shades[0].pos[0], after.shades[0].pos[2]) >= tuning.safe_radius)
+  assert.equal(after.player.flames, 3)
+  assert.ok(Math.hypot(after.shades[0].pos[0], after.shades[0].pos[2]) >= 6)
   assert.deepEqual(events(result), [])
 })
 
-test('lighting the last lantern stops early and awards win score once', () => {
-  const result = run({ ticks: 300, interval: 10, scenario: { ...noRandom, time_left_s: 45,
-    player: { carried: tuning.lantern_cost },
-    lanterns: [{ id: 'L1', pos: [0, 0, 0] },
-      ...[2, 3, 4, 5].map((number) => ({ id: 'L' + number, lit: true }))],
+test('unordered results resolve no flames, then all lamps, then dawn', () => {
+  const almostWon = Array.from({ length: 4 }, (_, index) => ({ id: 'L' + (index + 2), lit: true }))
+  const won = run({ ticks: 80, interval: 10, scenario: { ...quiet, time_left_s: 1 / 60,
+    player: { carried: 10 }, lanterns: [{ id: 'L1', pos: [0, 0, 0] }, ...almostWon],
   }, frames: inputs({ tick: 0, interact: true }) })
-  assert.deepEqual(events(result).map(({ name }) => name), ['deposit', 'lantern_lit', 'game_over'])
-  assert.deepEqual(events(result).at(-1).data, { result: 'won', reason: 'all_lit' })
-  const score = tuning.score.per_lantern + 44 * tuning.score.per_second_left +
-    tuning.flames * tuning.score.per_flame_left
-  assert.deepEqual(result.end, { type: 'end', ticks: 1, state: 'won', score })
+  assert.deepEqual(won.end, { type: 'end', ticks: 1, state: 'won', score: 350 })
+  const lost = run({ ticks: 30, scenario: { ...quiet, player: { flames: 1 },
+    shades: [{ pos: [0, .8, 0] }],
+  } })
+  assert.deepEqual(events(lost).at(-1).data, { result: 'lost', reason: 'no_flames' })
+  assert.equal(lost.end.ticks, 1)
+  const dawn = run({ ticks: 120, scenario: { ...quiet, time_left_s: 3 / 60 } })
+  assert.deepEqual(events(dawn).at(-1).data, { result: 'lost', reason: 'dawn' })
+  assert.equal(dawn.end.ticks, 3)
 })
 
-test('dawn produces game_over and stops before the requested tick limit', () => {
-  const result = run({ ticks: 120, scenario: { ...noRandom, time_left_s: 3 / 60 } })
-  assert.equal(result.end.ticks, 3)
-  assert.deepEqual(events(result).at(-1).data, { result: 'lost', reason: 'dawn' })
-  assert.equal(snapshots(result).at(-1).time_left_s, 0)
-})
-
-test('same seed yields identical JSONL including spawned shade IDs', () => {
+test('same seed produces byte-identical JSONL and spawning IDs; different seed changes the run', () => {
   const options = { ticks: 850, interval: 120 }
   const first = run(options)
-  assert.equal(first.status, 0)
   assert.equal(first.raw, run(options).raw)
   assert.notEqual(first.raw, run({ ...options, seed: 43 }).raw)
-  assert.deepEqual(events(first).find(({ name }) => name === 'shade_spawned').data, { id: 'S1' })
+  assert.deepEqual(events(first).filter(({ name }) => name === 'shade_spawned').slice(0, 2)
+    .map(({ tick, data }) => [tick, data.id]), [[300, 'S1'], [300, 'S2']])
 })
 
-test('a full default seeded night can be won by gathering motes and visiting all lanterns', () => {
+
+
+test('the default Đảo Bến seed can win all five lamps under v1.1 rules', () => {
   const game = newGame(42)
   const frames = []
-  const compareTo = (pos) => (a, b) => distance(a, pos) - distance(b, pos)
-
+  const offsets = [0, .32, -.32, .65, -.65, 1, -1, 1.45, -1.45, 2, -2, Math.PI]
   while (game.state === 'playing') {
     const pos = game.player.pos
-    const nearestLantern = game.lanterns.filter(({ lit }) => !lit)
-      .sort((a, b) => compareTo(pos)(a.pos, b.pos))[0]
-    const canLight = game.player.carried >= tuning.lantern_cost - nearestLantern.deposited
-    const target = canLight ? nearestLantern.pos : [...game.motes.values()].sort(compareTo(pos))[0]
-    assert.ok(target, 'There must be enough motes to light the island')
-
+    const closest = (a, b) => distance(pos, a.pos) - distance(pos, b.pos)
+    const lantern = game.lanterns.filter(({ lit }) => !lit).sort(closest)[0]
+    const mote = [...game.motes.values()].sort(closest)[0]
+    const safe = game.lanterns.filter(({ lit }) => lit).sort(closest)[0]
+    const ready = game.player.carried >= tuning.lantern_cost - lantern.deposited
+    const target = ready ? lantern.pos : (mote ?? safe)?.pos ?? pos
     const range = distance(pos, target)
-    const interact = canLight && range <= tuning.interact_radius && !game.lastInput.interact
-    const move = range > .01 && !interact
-      ? [(target[0] - pos[0]) / range, (target[2] - pos[2]) / range] : [0, 0]
-    const pulse = !game.lastInput.pulse && game.tick >= game.nextPulse &&
-      game.shades.some((shade) => shade.state === 'chase' && distance(shade.pos, pos) < 2)
-    frames.push({ tick: game.tick, move, interact, pulse })
-    stepGame(game, { ...defaultInput, move, interact, pulse })
-  }
+    const interact = ready && range <= tuning.interact_radius && !game.lastInput.interact
+    const threats = game.shades.filter(({ state, pos: point }) =>
+      (state === 'chase' || state === 'wander') && distance(point, pos) < 8)
 
+    let move = [0, 0]
+    let deviation = 0
+    if (!interact && range > .1) {
+      const heading = Math.atan2(target[2] - pos[2], target[0] - pos[0])
+      let best = -Infinity
+      for (const offset of offsets) {
+        const angle = heading + offset
+        const direction = [Math.cos(angle), Math.sin(angle)]
+        const next = [pos[0] + direction[0] * 2, 0, pos[2] + direction[1] * 2]
+        if (Math.hypot(next[0], next[2]) > 39) continue
+        const danger = threats.reduce((sum, shade) =>
+          sum + Math.max(0, 4 - distance(shade.pos, next)) ** 2, 0)
+        const progress = range - distance(next, target) - .42 * danger
+        if (progress <= best) continue
+        best = progress
+        move = direction
+        deviation = offset
+      }
+    }
+    const dash = range > 6 && !game.player.dashCd && !game.lastInput.dash && Math.abs(deviation) < 1.1
+    const pulse = game.player.carried >= tuning.pulse_cost && !game.player.pulseCd &&
+      !game.lastInput.pulse && threats.some((shade) => distance(shade.pos, pos) < 1.6)
+    frames.push({ tick: game.tick, move, interact, dash, pulse })
+    stepGame(game, { ...defaultInput, move, interact, dash, pulse })
+  }
   assert.equal(game.state, 'won')
-  const replay = run({ ticks: 60 * 300, frames: { frames }, interval: 300 })
-  assert.deepEqual(replay.end, { type: 'end', ticks: game.tick, state: 'won', score: game.score })
+  const replay = run({ ticks: 18000, frames: { frames }, interval: 600 })
   assert.equal(events(replay).filter(({ name }) => name === 'lantern_lit').length, 5)
+  assert.deepEqual(replay.end, { type: 'end', ticks: game.tick, state: 'won', score: game.score })
 })

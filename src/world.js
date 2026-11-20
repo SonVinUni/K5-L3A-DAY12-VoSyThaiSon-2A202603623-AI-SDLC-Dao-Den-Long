@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { ISLAND_RADIUS, tuning } from './simulation.js'
+import { tuning } from './simulation.js'
+import { maps, ramps, surface } from './maps.js'
 
 const clay = (color) => new THREE.MeshStandardMaterial({ color, roughness: .88, flatShading: true })
 const unlit = (color) => new THREE.MeshBasicMaterial({ color })
@@ -7,14 +8,14 @@ const sphere = new THREE.SphereGeometry(1, 12, 8)
 const box = new THREE.BoxGeometry(1, 1, 1)
 const circle = new THREE.CircleGeometry(1, 40)
 const flareGeometry = new THREE.RingGeometry(.92, 1, 64)
-const bark = clay(0x443341)
+const bark = clay(0x6b4a2f)
 const rock = clay(0x39354e)
 const grassTones = [clay(0x3a5660), clay(0x45465f), clay(0x2d5354)]
-const wooden = clay(0x69414b)
+const wooden = clay(0x6b4a2f)
 const metal = clay(0x5f4954)
-const paperDark = clay(0xbb6455)
-const paperLit = new THREE.MeshStandardMaterial({ color: 0xffc171, emissive: 0xff9938, emissiveIntensity: 1.45 })
-const hot = unlit(0xffd38a)
+const paperDark = clay(0x5b5f6e)
+const paperLit = new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xffb347, emissiveIntensity: 1.45 })
+const hot = unlit(0xfff6c2)
 
 function put(parent, geometry, material, position, scale) {
   const mesh = new THREE.Mesh(geometry, material)
@@ -68,13 +69,15 @@ function buildLantern(group, texture, index) {
   }), [0, .032 + index * .001, 0], [tuning.safe_radius, tuning.safe_radius, 1])
   pool.rotation.x = -Math.PI / 2
   pool.visible = false
-  return { group, paper, halo, pool, lit: false }
+  const core = put(group, sphere, unlit(0xffe9b0), [0, 3.04, 0], [.55, .30, .55])
+  core.visible = false
+  return { group, paper, halo, pool, core, lit: false }
 }
 
 function makePlayer(texture) {
   const group = new THREE.Group()
-  const coat = clay(0x89b1ab)
-  const sash = clay(0xad5b54)
+  const coat = clay(0xe8e2d0)
+  const sash = clay(0xc8102e)
   const skin = clay(0xa87262)
   const pants = clay(0x403b59)
   const straw = clay(0xeab875)
@@ -105,69 +108,96 @@ function makePlayer(texture) {
 
 function makeShade(texture) {
   const group = new THREE.Group()
-  const body = put(group, sphere, clay(0x211327), [0, 0, 0], [.59, .69, .52])
+  const body = put(group, sphere, clay(0x120a1a), [0, 0, 0], [.59, .69, .52])
   put(group, new THREE.ConeGeometry(.45, .86, 7), clay(0x302144), [0, -.57, 0]).rotation.z = Math.PI
   const eyes = [-1, 1].map((side) => put(group, sphere, unlit(0xddabff),
     [side * .17, .06, .46], [.09, .105, .055]))
-  const haze = glow(group, texture, 0x8a44e1, 3.4, .43, [0, .06, 0])
+  const haze = glow(group, texture, 0x7a3cff, 3.4, .43, [0, .06, 0])
   return { group, body, eyes, haze }
 }
 
-function makeIsland(scene, texture) {
+function makeIsland(scene, texture, night) {
   const deck = new THREE.Group()
   scene.add(deck)
-  put(deck, new THREE.CylinderGeometry(ISLAND_RADIUS, 25, 2.5, 60), clay(0x40585f), [0, -1.27, 0])
-  put(deck, new THREE.CylinderGeometry(25.3, 16, 6, 30), clay(0x342f4c), [0, -5, 0])
-  put(deck, new THREE.CylinderGeometry(16, 5, 5, 16), clay(0x25253d), [0, -10.45, 0])
-  const path = clay(0x6b686b)
-  for (let n = 0; n < 5; n += 1) {
-    const angle = (n + .6) * Math.PI * 2 / 5
-    for (let stone = 0; stone < 13; stone += 1) {
-      const dist = 1.7 + stone * 1.32
-      const curve = angle + Math.sin(stone * .35 + n) * .16
-      const tile = put(deck, sphere, path, [Math.cos(curve) * dist, .014, Math.sin(curve) * dist],
-        [.45 + .18 * Math.sin(stone), .061, .28 + .13 * Math.cos(stone)])
-      tile.rotation.y = -curve
+  const map = maps[night]
+  const grass = clay(0x2f5d50)
+  const sand = clay(0xc9b48a)
+  const dark = clay(0x12384a)
+  const rockShape = new THREE.DodecahedronGeometry(1)
+  const trunk = new THREE.CylinderGeometry(.13, .23, 2, 7)
+  const crown = new THREE.ConeGeometry(1.2, 2.25, 7)
+  for (const [islandX, radius] of map.islands) {
+    put(deck, new THREE.CylinderGeometry(radius, radius * .9, 1.4, 64), grass, [islandX, -.7, 0])
+    put(deck, new THREE.CylinderGeometry(radius * .91, radius * .82, 2.1, 48), sand, [islandX, -2.45, 0])
+    put(deck, new THREE.CylinderGeometry(radius * .82, radius * .17, 8, 30), dark, [islandX, -7.45, 0])
+    for (let index = 0; index < 15; index += 1) {
+      const angle = index * 2.399963
+      const range = radius - 1.2 - index % 4
+      const x = islandX + Math.cos(angle) * range
+      const z = Math.sin(angle) * range
+      if (night === 2 && Math.abs(z) < 3.6 && x > 24 && x < 46) continue
+      put(deck, trunk, bark, [x, 1, z]).scale.setScalar(.85 + index % 4 * .13)
+      for (let level = 0; level < 2; level += 1) {
+        const scale = (1 - level * .2) * (1 + index % 4 * .09)
+        put(deck, crown, grassTones[(index + level) % 3], [x, 2.15 + level * .75, z], [scale, scale, scale])
+      }
+    }
+    for (let index = 0; index < 22; index += 1) {
+      const angle = index * 2.399963
+      const range = radius * (.20 + .73 * Math.sqrt((index + .2) / 22))
+      const x = islandX + Math.cos(angle) * range
+      const z = Math.sin(angle) * range
+      put(deck, rockShape, index % 2 ? rock : sand,
+        [x, (surface(night, x, z) ?? 0) + .09, z], [.34, .16, .47]).rotation.y = angle
     }
   }
-  const trunk = new THREE.CylinderGeometry(.12, .22, 2.05, 7)
-  const crown = new THREE.ConeGeometry(1, 2, 7)
-  for (let i = 0; i < 29; i += 1) {
-    const angle = i * 2.399963
-    const distance = 20 + (i % 6) * 1.1
-    const x = Math.cos(angle) * distance
-    const z = Math.sin(angle) * distance
-    const tree = new THREE.Group()
-    tree.position.set(x, 0, z)
-    tree.rotation.y = i * .81
-    tree.scale.setScalar(.7 + (i % 7) * .12)
-    put(tree, trunk, bark, [0, .97, 0])
-    for (let layer = 0; layer < 3; layer += 1) {
-      const width = 1.28 - layer * .26
-      put(tree, crown, grassTones[(i + layer) % grassTones.length],
-        [0, 1.85 + layer * .64, 0], [width, .91, width])
+
+  if (night === 2) {
+    const bamboo = clay(0x947248)
+    for (let index = 0; index < 24; index += 1) {
+      put(deck, box, index % 3 ? bamboo : wooden, [26.375 + .75 * index, -.11, 0], [.72, .22, 4])
     }
-    deck.add(tree)
   }
-  const stoneShape = new THREE.DodecahedronGeometry(1)
-  const tuft = new THREE.ConeGeometry(.23, .5, 3)
-  for (let i = 0; i < 90; i += 1) {
-    const angle = i * 2.399963
-    const radius = 3 + 23 * Math.sqrt((i + .5) / 90)
-    const x = Math.cos(angle) * radius
-    const z = Math.sin(angle) * radius
-    const isStone = i % 4 === 0
-    const decoration = put(deck, isStone ? stoneShape : tuft, isStone ? rock : grassTones[i % 3],
-      [x, .12, z], isStone ? [.42 + i % 3 * .17, .3, .48] : [.85, .54 + i % 3 * .18, .85])
-    decoration.rotation.y = i
+  if (night === 3) {
+    const half = new THREE.Shape()
+    half.absarc(0, 0, 24, 0, Math.PI, false)
+    half.lineTo(-12, 0)
+    half.absarc(0, 0, 12, Math.PI, 0, true)
+    half.closePath()
+    const rim = put(deck, new THREE.ExtrudeGeometry(half, { bevelEnabled: false, depth: 3, curveSegments: 32 }),
+      [grass, sand], [0, 3, 0])
+    rim.rotation.x = Math.PI / 2
+    for (const [dx, dz] of ramps) {
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+        dx * 30 - dz * 1.5, 0, dz * 30 + dx * 1.5,
+        dx * 30 + dz * 1.5, 0, dz * 30 - dx * 1.5,
+        dx * 24 + dz * 1.5, 3, dz * 24 - dx * 1.5,
+        dx * 24 - dz * 1.5, 3, dz * 24 + dx * 1.5,
+      ], 3))
+      geometry.setIndex([0, 2, 1, 0, 3, 2])
+      geometry.computeVertexNormals()
+      put(deck, geometry, new THREE.MeshStandardMaterial({ color: 0xc9b48a, side: THREE.DoubleSide }), [0, 0, 0])
+    }
+    put(deck, new THREE.CylinderGeometry(8, 8, 6, 48), [sand, grass, sand], [0, 3, 0])
+    put(deck, new THREE.CylinderGeometry(2, 2, 7.4, 16), wooden, [0, 9.7, 0])
+    put(deck, new THREE.ConeGeometry(2.1, 1.25, 16), rock, [0, 13.375, 0])
+    put(deck, new THREE.CylinderGeometry(.56, .74, .75, 14), hot, [0, 12.45, 1.93])
   }
-  for (let i = 0; i < 16; i += 1) {
-    const angle = i * 2.399963
-    const radius = 31 + i % 6 * 9
-    const cloud = glow(scene, texture, i % 2 ? 0x816da8 : 0x6c8caf, 40, .3,
-      [Math.cos(angle) * radius, -8 - i % 4, Math.sin(angle) * radius])
-    cloud.scale.y = 7 + i % 4
+  for (const pad of map.pads) {
+    const [x, y, z] = pad.pos
+    put(deck, new THREE.CylinderGeometry(1, 1, .10, 28), clay(0xf2c14e), [x, y + .05, z])
+    const padMark = put(deck, new THREE.RingGeometry(.57, .78, 28), hot, [x, y + .108, z])
+    padMark.rotation.x = -Math.PI / 2
   }
+  for (let index = 0; index < 12; index += 1) {
+    const angle = index * 2.399963
+    const range = 43 + index % 6 * 9
+    const cloud = glow(deck, texture, 0x12384a, 45, .52,
+      [Math.cos(angle) * range + (night === 2 ? 35 : 0), -8 - index % 4, Math.sin(angle) * range])
+    cloud.scale.y = 8 + index % 4
+  }
+  return deck
 }
 
 function makeSky(scene, texture) {
@@ -197,13 +227,13 @@ function makeSky(scene, texture) {
 export function createWorld(host) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.65))
-  renderer.setClearColor(0x252340)
+  renderer.setClearColor(0x0e1430)
   host.append(renderer.domElement)
   const scene = new THREE.Scene()
-  scene.fog = new THREE.FogExp2(0x252340, .015)
+  scene.fog = new THREE.FogExp2(0x1b2350, .013)
   const camera = new THREE.PerspectiveCamera(53, 1, .12, 170)
   const texture = radialTexture()
-  const skyLight = new THREE.HemisphereLight(0xcac8ff, 0x2e163b, 2.08)
+  const skyLight = new THREE.HemisphereLight(0xf6ece6, 0x282644, .15)
   scene.add(skyLight)
   const moonlight = new THREE.DirectionalLight(0xa9b5ff, 1.25)
   moonlight.position.set(-12, 18, 10)
@@ -212,17 +242,25 @@ export function createWorld(host) {
   bounce.position.set(12, 7, -13)
   scene.add(bounce)
   makeSky(scene, texture)
-  makeIsland(scene, texture)
+  let terrain, terrainNight
 
   const player = makePlayer(texture)
   scene.add(player.group)
-  const lanternMeshes = Array.from({ length: 5 }, (_, index) => {
+  const lanternMeshes = Array.from({ length: 7 }, (_, index) => {
     const group = new THREE.Group()
     scene.add(group)
     return buildLantern(group, texture, index)
   })
   const motes = new Map()
   const shades = new Map()
+  const ribbons = new Map()
+  const tokens = new Map()
+  const silk = clay(0x8fa3b8)
+  const gold = unlit(0xf2c14e)
+  const crimson = unlit(0xc8102e)
+  const leaves = new THREE.Group()
+  for (let index = 0; index < 16; index += 1) put(leaves, sphere, gold, [0, 0, 0], [.13, .035, .08])
+  scene.add(leaves)
   const pulse = put(scene, flareGeometry, new THREE.MeshBasicMaterial({
     color: 0xffcd82, opacity: 0, transparent: true, side: THREE.DoubleSide,
     depthWrite: false, blending: THREE.AdditiveBlending,
@@ -251,6 +289,14 @@ export function createWorld(host) {
 
   function draw(game, yaw, time, mode) {
     const { player: actor } = game
+    if (terrainNight !== game.night) {
+      if (terrain) scene.remove(terrain)
+      terrain = makeIsland(scene, texture, game.night)
+      terrainNight = game.night
+    }
+    for (const visual of lanternMeshes) visual.group.visible = false
+    for (const ribbon of ribbons.values()) ribbon.visible = false
+    for (const token of tokens.values()) token.visible = false
     player.group.position.set(...actor.pos)
     player.group.rotation.y = actor.facing
     const walking = mode === 'playing' && game.lastInput.move.some((axis) => axis !== 0)
@@ -263,24 +309,26 @@ export function createWorld(host) {
     let count = 0
     for (const [index, lantern] of game.lanterns.entries()) {
       const visual = lanternMeshes[index]
+      visual.group.visible = true
       visual.group.position.set(...lantern.pos)
       if (visual.lit !== lantern.lit) {
         visual.lit = lantern.lit
         visual.paper.material = lantern.lit ? paperLit : paperDark
         visual.pool.visible = lantern.lit
+        visual.core.visible = lantern.lit
       }
       visual.halo.material.opacity = lantern.lit ? .76 + .1 * Math.sin(5 * time + index) : .13
       if (lantern.lit) count += 1
     }
-    skyLight.intensity = 2.08 + count * .14
-    bounce.intensity = .55 + count * .16
+    skyLight.intensity = .15 + .55 * count / game.lanterns.length
+    bounce.intensity = .85
 
-    for (const [id, pos] of game.motes) {
+    for (const { id, pos } of game.motes.values()) {
       let mote = motes.get(id)
       if (!mote) {
         mote = new THREE.Group()
         put(mote, sphere, hot, [0, 0, 0], [.145, .145, .145])
-        glow(mote, texture, 0xffa73b, 1.8, .82, [0, 0, 0])
+        glow(mote, texture, 0xffe58a, 1.8, .82, [0, 0, 0])
         motes.set(id, mote)
         scene.add(mote)
       }
@@ -306,6 +354,7 @@ export function createWorld(host) {
       }
       visual.group.position.set(shade.pos[0], shade.pos[1] + .14 * Math.sin(time * 4), shade.pos[2])
       visual.group.rotation.y = Math.atan2(actor.pos[0] - shade.pos[0], actor.pos[2] - shade.pos[2])
+      visual.body.material.color.setHex(shade.state === 'stunned' ? 0x3a3450 : 0x120a1a)
       visual.body.scale.y = shade.state === 'stunned' ? .46 : .69
       visual.haze.material.opacity = shade.state === 'stunned' ? .18 : .43
     }
@@ -315,6 +364,50 @@ export function createWorld(host) {
       for (const object of visual.group.children) object.material?.dispose()
       shades.delete(id)
     }
+
+
+    for (const drifter of game.drifters) {
+      let ribbon = ribbons.get(drifter.id)
+      if (drifter.state === 'removed') {
+        if (ribbon) ribbon.visible = false
+        continue
+      }
+      if (!ribbon) {
+        ribbon = new THREE.Group()
+        for (let part = 0; part < 7; part += 1) {
+          put(ribbon, sphere, silk, [0, 0, 0], [.24, .10, .32])
+        }
+        scene.add(ribbon)
+        ribbons.set(drifter.id, ribbon)
+      }
+      ribbon.visible = true
+      ribbon.position.set(drifter.pos[0], drifter.pos[1] + .2, drifter.pos[2])
+      ribbon.rotation.y = Math.atan2(actor.pos[0] - drifter.pos[0], actor.pos[2] - drifter.pos[2])
+      ribbon.children.forEach((segment, index) => segment.position.set(
+        Math.sin(time * 9 + index * .8) * .24, Math.cos(time * 6 + index) * .09, index * -.27))
+    }
+    for (const charm of game.charms) {
+      let token = tokens.get(charm.id)
+      if (!token) {
+        token = new THREE.Group()
+        put(token, box, gold, [0, 0, 0], [.48, .70, .08])
+        put(token, box, crimson, [0, 0, .05], [.36, .57, .025])
+        scene.add(token)
+        tokens.set(charm.id, token)
+      }
+      token.visible = charm.available
+      token.position.set(charm.pos[0], charm.pos[1] + .75 + .13 * Math.sin(time * 4), charm.pos[2])
+      token.rotation.y = time * 1.5
+    }
+    const angle = game.wind.dir_deg * Math.PI / 180
+    leaves.visible = game.wind.active || game.wind.warning
+    if (leaves.visible) leaves.children.forEach((leaf, index) => {
+      const offset = (time * (game.wind.active ? 7 : 3) + index * 2.17) % 18 - 9
+      const side = index % 7 - 3
+      leaf.position.set(actor.pos[0] + Math.cos(angle) * offset - Math.sin(angle) * side,
+        actor.pos[1] + .65 + index % 3 * .32, actor.pos[2] + Math.sin(angle) * offset + Math.cos(angle) * side)
+      leaf.rotation.set(time * 2 + index, angle, index)
+    })
 
     const pulseAge = (time - pulseAt) / .55
     pulse.visible = pulseAge < 1
@@ -326,12 +419,12 @@ export function createWorld(host) {
     }
 
     const [x, y, z] = actor.pos
-    if (mode === 'intro') {
-      aim.set(1, .6, 4)
-      cameraPosition.set(-26 + Math.sin(time * .18) * 4, 17, -34)
+    if (mode === 'intro' || mode === 'menu') {
+      aim.set(game.night === 2 ? 33 : 1, .6, 4)
+      cameraPosition.set((game.night === 2 ? -3 : -38) + Math.sin(time * .18) * 4, 28, -46)
     } else {
-      cameraPosition.set(x - Math.sin(yaw) * 8.6, y * .65 + 5.9, z - Math.cos(yaw) * 8.6)
-      aim.set(x + Math.sin(yaw) * 3, y * .50 + 1.1, z + Math.cos(yaw) * 3)
+      cameraPosition.set(x - Math.sin(yaw) * 8.6, Math.max(-4, y) + 5.9, z - Math.cos(yaw) * 8.6)
+      aim.set(x + Math.sin(yaw) * 3, Math.max(-5, y) + 1.1, z + Math.cos(yaw) * 3)
     }
     if (mode === lastMode) camera.position.lerp(cameraPosition, .14)
     else camera.position.copy(cameraPosition)
@@ -340,8 +433,17 @@ export function createWorld(host) {
     renderer.render(scene, camera)
   }
 
+  function projectTarget(pos) {
+    const target = new THREE.Vector3(pos[0], pos[1] + 3, pos[2])
+    const relative = target.clone().applyMatrix4(camera.matrixWorldInverse)
+    target.project(camera)
+    const visible = relative.z < 0 && Math.abs(target.x) <= .91 && Math.abs(target.y) <= .84
+    return { visible, angle: Math.atan2(relative.x, -relative.z) * 180 / Math.PI }
+  }
+
+
   return {
-    canvas: renderer.domElement, draw, recordEvent,
+    projectTarget, canvas: renderer.domElement, draw, recordEvent,
     resetEffects() { pulseAt = hitAt = -10 },
   }
 }
