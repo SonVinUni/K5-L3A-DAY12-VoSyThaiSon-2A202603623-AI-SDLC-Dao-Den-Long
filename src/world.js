@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { tuning } from './simulation.js'
+import { HZ, tuning } from './simulation.js'
+import { isSafeLantern, isWeakLantern } from './lanterns.js'
 import { maps, ramps, surface } from './maps.js'
 
 const clay = (color) => new THREE.MeshStandardMaterial({ color, roughness: .88, flatShading: true })
@@ -71,7 +72,29 @@ function buildLantern(group, texture, index) {
   pool.visible = false
   const core = put(group, sphere, unlit(0xffe9b0), [0, 3.04, 0], [.55, .30, .55])
   core.visible = false
-  return { group, paper, halo, pool, core, lit: false }
+  const tornShape = new THREE.Shape()
+  tornShape.moveTo(-.13, .24)
+  tornShape.lineTo(.06, .12)
+  tornShape.lineTo(-.02, -.01)
+  tornShape.lineTo(.17, -.26)
+  tornShape.lineTo(-.17, -.04)
+  tornShape.lineTo(-.07, .08)
+  tornShape.closePath()
+  const tears = new THREE.Group()
+  const tornPaper = new THREE.ShapeGeometry(tornShape)
+  for (const angle of [0, Math.PI * 2 / 3, Math.PI * 4 / 3]) {
+    const tear = put(tears, tornPaper, unlit(0x151726), [Math.sin(angle) * .56, 3.04, Math.cos(angle) * .56])
+    tear.rotation.y = angle
+  }
+  group.add(tears)
+
+  const fuelBar = new THREE.Group()
+  group.add(fuelBar)
+  fuelBar.position.y = 4.38
+  const plane = new THREE.PlaneGeometry(1, 1)
+  put(fuelBar, plane, unlit(0x11162b), [0, 0, 0], [1.85, .19, 1])
+  const fill = put(fuelBar, plane, unlit(0xffe9b0), [0, 0, .013], [1.67, .09, 1])
+  return { group, paper, halo, pool, core, tears, fuelBar, fill }
 }
 
 function makePlayer(texture) {
@@ -106,13 +129,13 @@ function makePlayer(texture) {
   return { group, legs, torso }
 }
 
-function makeShade(texture) {
+function makeShade(texture, shadeColor) {
   const group = new THREE.Group()
   const body = put(group, sphere, clay(0x120a1a), [0, 0, 0], [.59, .69, .52])
   put(group, new THREE.ConeGeometry(.45, .86, 7), clay(0x302144), [0, -.57, 0]).rotation.z = Math.PI
-  const eyes = [-1, 1].map((side) => put(group, sphere, unlit(0xddabff),
+  const eyes = [-1, 1].map((side) => put(group, sphere, unlit(shadeColor),
     [side * .17, .06, .46], [.09, .105, .055]))
-  const haze = glow(group, texture, 0x7a3cff, 3.4, .43, [0, .06, 0])
+  const haze = glow(group, texture, shadeColor, 3.4, .43, [0, .06, 0])
   return { group, body, eyes, haze }
 }
 
@@ -243,6 +266,7 @@ export function createWorld(host) {
   scene.add(bounce)
   makeSky(scene, texture)
   let terrain, terrainNight
+  let shadeColor = 0x7a3cff
 
   const player = makePlayer(texture)
   scene.add(player.group)
@@ -311,13 +335,19 @@ export function createWorld(host) {
       const visual = lanternMeshes[index]
       visual.group.visible = true
       visual.group.position.set(...lantern.pos)
-      if (visual.lit !== lantern.lit) {
-        visual.lit = lantern.lit
-        visual.paper.material = lantern.lit ? paperLit : paperDark
-        visual.pool.visible = lantern.lit
-        visual.core.visible = lantern.lit
-      }
-      visual.halo.material.opacity = lantern.lit ? .76 + .1 * Math.sin(5 * time + index) : .13
+      const weak = isWeakLantern(lantern)
+      const flash = weak && game.sim_tick % 60 >= 30
+      visual.group.scale.y = lantern.lit ? 1 : .8
+      visual.tears.visible = !lantern.lit
+      visual.paper.material = lantern.lit && !flash ? paperLit : paperDark
+      visual.pool.visible = isSafeLantern(lantern)
+      visual.core.visible = lantern.lit && !flash
+      visual.halo.material.opacity = lantern.lit ? flash ? .21 : .76 : .07
+      visual.fuelBar.visible = lantern.lit
+      const ratio = lantern.fuelUnits / (tuning.fuel_max * HZ)
+      visual.fill.scale.x = Math.max(.001, 1.67 * ratio)
+      visual.fill.position.x = -.835 + visual.fill.scale.x / 2
+      visual.fill.material.color.setHex(flash ? 0x6b5f64 : 0xffe9b0)
       if (lantern.lit) count += 1
     }
     skyLight.intensity = .15 + .55 * count / game.lanterns.length
@@ -348,7 +378,7 @@ export function createWorld(host) {
       activeShades.add(shade.id)
       let visual = shades.get(shade.id)
       if (!visual) {
-        visual = makeShade(texture)
+        visual = makeShade(texture, shadeColor)
         shades.set(shade.id, visual)
         scene.add(visual.group)
       }
@@ -430,6 +460,7 @@ export function createWorld(host) {
     else camera.position.copy(cameraPosition)
     lastMode = mode
     camera.lookAt(aim)
+    for (const visual of lanternMeshes) visual.fuelBar.quaternion.copy(camera.quaternion)
     renderer.render(scene, camera)
   }
 
@@ -445,5 +476,12 @@ export function createWorld(host) {
   return {
     projectTarget, canvas: renderer.domElement, draw, recordEvent,
     resetEffects() { pulseAt = hitAt = -10 },
+    setAccessiblePalette(enabled) {
+      shadeColor = enabled ? 0x00b3ff : 0x7a3cff
+      for (const { eyes, haze } of shades.values()) {
+        haze.material.color.setHex(shadeColor)
+        for (const eye of eyes) eye.material.color.setHex(shadeColor)
+      }
+    },
   }
 }

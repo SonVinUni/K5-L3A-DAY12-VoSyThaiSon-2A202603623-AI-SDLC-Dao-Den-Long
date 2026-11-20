@@ -93,3 +93,7 @@ h1 { font: 500 clamp(3rem, 8vw, 6.8rem)/.98 Cambria, "Times New Roman", serif; l
   .abilities { bottom: 181px; }
   .notice { bottom: 249px; }
 }
+
+#game[data-accessible-palette="true"] { --danger: #FFFFFF; }
+.settings-panel .toggle { align-items: center; padding-block: .2rem; }
+.settings-panel .toggle input { width: 20px; height: 20px; margin: 0; }

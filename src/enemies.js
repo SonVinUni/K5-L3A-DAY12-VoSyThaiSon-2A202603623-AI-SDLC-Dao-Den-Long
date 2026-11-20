@@ -1,6 +1,7 @@
 import { moveShade } from './physics.js'
+import { closestLantern, isSafeLantern, isWeakLantern } from './lanterns.js'
 
-export const shadeStates = ['spawning', 'wander', 'chase', 'recoil', 'stunned']
+export const shadeStates = ['spawning', 'wander', 'chase', 'recoil', 'stunned', 'drain']
 export const drifterStates = ['idle', 'chase', 'flee', 'removed']
 export const xz = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2])
 const epsilon = 1e-8
@@ -15,8 +16,9 @@ function withinPulse(pos, player, radius) {
     pos[2] - player[2]) <= radius + epsilon
 }
 
-export function makeShade(id, pos, state = 'chase', stateTicks = 0, angle = 0) {
-  return { id, pos: [...pos], state, stateTicks, angle, push: [0, 0], pushLeft: 0, safeExit: null }
+export function makeShade(id, pos, state = 'chase', stateTicks = 0, angle = 0, target = null) {
+  return { id, pos: [...pos], state, stateTicks, angle, push: [0, 0], pushLeft: 0, safeExit: null,
+    target_lantern_id: target, drainTicks: 0 }
 }
 
 export function makeDrifter(id, pos, state = 'idle', stolen = 0, stateTicks = 0, angle = 0) {
@@ -28,11 +30,25 @@ function letFlee(drifter, ticks) {
   drifter.stateTicks = ticks
 }
 
+function changeShade(shade, state, lantern = null) {
+  shade.state = state
+  shade.target_lantern_id = lantern?.id ?? null
+  shade.drainTicks = 0
+}
+
 export function updateSafety(game) {
   for (const shade of game.shades) {
+    if (shade.state === 'drain') {
+      const target = game.lanterns.find(({ id }) => id === shade.target_lantern_id)
+      if (!target || !isWeakLantern(target) || xz(shade.pos, target.pos) > 2 + epsilon) {
+        changeShade(shade, 'wander')
+      }
+    }
+    if (shade.safeExit && !isSafeLantern(shade.safeExit.lantern)) shade.safeExit = null
     if (shade.safeExit) continue
-    const lantern = game.lanterns.find(({ lit, pos }) => lit && xz(shade.pos, pos) < game.safeRadius - epsilon)
-    if (lantern) shade.safeExit = { center: lantern.pos, ticks: 30 }
+    const lantern = game.lanterns.find((lamp) => isSafeLantern(lamp) &&
+      xz(shade.pos, lamp.pos) < game.safeRadius - epsilon)
+    if (lantern) shade.safeExit = { lantern, ticks: 30 }
   }
 }
 
@@ -43,11 +59,12 @@ export function emitPulse(game, rules, emit, drop) {
   const stunned_ids = []
   for (const shade of game.shades) {
     if (!withinPulse(shade.pos, player.pos, rules.pulse_radius)) continue
-    shade.state = 'stunned'
+    const wasDraining = shade.state === 'drain'
+    changeShade(shade, 'stunned')
     shade.stateTicks = Math.round(rules.pulse_stun_s * 60)
     shade.push = direction(player.pos, shade.pos).map((axis) => axis * rules.pulse_push_m / 15)
     shade.pushLeft = 15
-    game.score += rules.score.per_stun
+    game.score += wasDraining ? rules.score.per_drain_stun : rules.score.per_stun
     stunned_ids.push(shade.id)
   }
 
@@ -84,9 +101,10 @@ export function moveEnemies(game) {
   const player = game.player
   for (const shade of game.shades) {
     if (shade.safeExit) {
-      const { center, ticks } = shade.safeExit
-      const range = xz(shade.pos, center)
-      const offset = direction(center, shade.pos).map((value) => value * (game.safeRadius + epsilon - range) / ticks)
+      const { lantern, ticks } = shade.safeExit
+      const range = xz(shade.pos, lantern.pos)
+      const offset = direction(lantern.pos, shade.pos)
+        .map((value) => value * (game.safeRadius + epsilon - range) / ticks)
       shade.pos[0] += offset[0]
       shade.pos[2] += offset[1]
       shade.safeExit.ticks -= 1
@@ -100,14 +118,40 @@ export function moveEnemies(game) {
         else shade.pushLeft = 0
       }
       if (shade.stateTicks > 0) continue
+      if (shade.state === 'stunned') {
+        changeShade(shade, 'wander')
+        continue
+      }
     }
 
     const range = xz(shade.pos, player.pos)
-    if (shade.state !== 'chase' || range > 18) shade.state = range <= 12 ? 'chase' : 'wander'
+    if (shade.state === 'drain') {
+      if (range > 6 + epsilon) continue
+      changeShade(shade, 'chase')
+    } else if (shade.state !== 'chase' || range > 18 + epsilon) {
+      changeShade(shade, range <= 12 + epsilon ? 'chase' : 'wander')
+    }
     if (shade.state === 'chase') {
       const stride = Math.min(range, game.map.shadeSpeed / 60)
       canReach(game, shade, direction(shade.pos, player.pos).map((value) => value * stride))
-    } else if (!moveShade(game, shade, Math.cos(shade.angle) * 1.5 / 60, Math.sin(shade.angle) * 1.5 / 60)) {
+      continue
+    }
+
+    const weak = closestLantern(game.lanterns, shade.pos, isWeakLantern)
+    const target = weak ?? closestLantern(game.lanterns, shade.pos, (lantern) => !lantern.lit)
+    shade.target_lantern_id = target?.id ?? null
+    if (target) {
+      const meters = xz(shade.pos, target.pos)
+      if (weak && meters <= 2 + epsilon) {
+        changeShade(shade, 'drain', weak)
+        continue
+      }
+      const stride = Math.min(meters, 1.5 / 60)
+      const moved = canReach(game, shade, direction(shade.pos, target.pos).map((value) => value * stride))
+      if (weak && xz(shade.pos, weak.pos) <= 2 + epsilon) changeShade(shade, 'drain', weak)
+      if (moved) continue
+    }
+    if (!moveShade(game, shade, Math.cos(shade.angle) * 1.5 / 60, Math.sin(shade.angle) * 1.5 / 60)) {
       shade.angle += Math.PI * .67
     }
   }
@@ -141,8 +185,8 @@ export function contacts(game, rules, emit, drop) {
     letFlee(drifter, 240)
     emit('drifter_steal', { drifter_id: drifter.id, amount: drifter.stolen, carried: player.carried })
   }
-  if (player.invuln || player.flames <= 0 || game.lanterns.some(({ lit, pos }) =>
-    lit && xz(pos, player.pos) <= rules.safe_radius + epsilon)) return
+  if (player.invuln || player.flames <= 0 || game.lanterns.some((lantern) =>
+    isSafeLantern(lantern) && xz(lantern.pos, player.pos) <= rules.safe_radius + epsilon)) return
 
   for (const shade of game.shades) {
     if (shade.safeExit || !['chase', 'wander'].includes(shade.state) ||
@@ -153,7 +197,7 @@ export function contacts(game, rules, emit, drop) {
     const dropped = Math.floor(player.carried * rules.hit_drop_ratio)
     player.carried -= dropped
     drop(dropped, player.pos, false)
-    shade.state = 'recoil'
+    changeShade(shade, 'recoil')
     shade.stateTicks = 60
     shade.pushLeft = 60
     shade.push = direction(player.pos, shade.pos).map((axis) => axis * 2 / 60)

@@ -1,0 +1,48 @@
+
+> dao-den-long@0.0.0 test
+> node --test
+
+✔ campaign keeps only won scores, advances through all islands, and ends at dawn (1.9526ms)
+✔ tick 0 precedes input and partial frames retain their previous fields (171.2154ms)
+✔ zero ticks and sparse snapshots preserve the JSONL schedule (354.1456ms)
+✔ malformed files produce stderr and exit 2 (1042.023ms)
+✔ scenario setup updates only the designated lantern and emits no events at tick 0 (138.8202ms)
+✔ pickup honors inclusive XZ and height bounds, carry capacity, and scores only when depositing (119.7348ms)
+✔ jump is edge-triggered and lands while the key remains held (112.5307ms)
+✔ interaction breaks ties by ID and requires a new press to refuel (126.6535ms)
+✔ pulse respects 3D range, pushes over 15 ticks, stuns and enforces cooldown (162.8923ms)
+✔ contacts choose the first shade by ID, drop half of carried motes and grant invulnerability (137.8028ms)
+✔ lit lantern keeps shades outside after 30 ticks and suppresses contact during evacuation (145.3108ms)
+✔ dawn is resolved after lighting while no flames still causes an immediate loss (360.2073ms)
+✔ same seed produces byte-identical JSONL and spawning IDs; different seed changes the run (367.6239ms)
+✔ three nights use standard maps, timers, IDs, and structured snapshots after the v1.2 upgrade (485.5835ms)
+✔ pause holds simulation, motion and all duration counters while wall ticks advance (181.2809ms)
+✔ dash covers 2.8 m in 12 ticks, preserves altitude and re-arms after 90 simulated ticks (153.4202ms)
+✔ fall ignores invulnerability, loses all light once, and respawns after 60 simulated ticks (148.7925ms)
+✔ if all lamps are set but the last flame is lost on the same step, loss wins (138.4951ms)
+✔ a drifter steals before a shade hits, and stolen light can be recovered by pulse (127.8463ms)
+✔ Gió Lạc spawns at simulation tick 1200, never at that wall tick during pause (203.2001ms)
+✔ Bùa Gió has 600 ticks, grants 7.2 m/s and allows edge-triggered dash without cooldown (147.0159ms)
+✔ Bùa Gió refreshes and dropped motes expire at the configured simulation ticks (136.2116ms)
+✔ Đảo Cau pad traverses the gap while held movement cannot overwrite launch; bridge stays walkable (251.5459ms)
+✔ Đảo Chuông allows ramp traversal and pad landing on the upper disk; its wall blocks walking up (426.1354ms)
+✔ gió mạnh starts at simulation tick 1800, pushes at 2 m/s and expires at 2100 (253.1602ms)
+✔ all lamps lit does not end early, and dawn uses the threshold for each night (1136.3607ms)
+✔ fuel exhausted on the dawn tick is removed from the count; the same tick may relight it (266.768ms)
+✔ losing the last flame on the dawn tick overrides a surviving majority of lamps (146.3673ms)
+✔ safe zone uses the exact 30-fuel boundary before snapshot rounding (247.1963ms)
+✔ restoring a lamp with multiple shades evacuates rather than harming Mây (113.7612ms)
+✔ capacity increases at lighting, affects pickup only from the next tick, and is capped (272.5115ms)
+✔ drain adds five units per second per shade and emits per shade every 60 active ticks (136.6448ms)
+✔ wander chooses the nearest weak lamp by ID; chase keeps the player as its target (143.2885ms)
+✔ a draining shade chases within six meters; hitting a draining shade scores fifteen (264.5855ms)
+✔ full lamps are not selected during interaction and fractional fuel arithmetic is bounded (3.1205ms)
+✔ pause stops lamp fuel and the drain cadence, and repeated runs are byte-identical (207.0746ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3456.8534

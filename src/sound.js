@@ -3,7 +3,7 @@ const cues = {
   player_hit: [180, 135], jump: [275, 388], dash: [240, 510], won: [392, 523, 659, 784],
   lost: [330, 247, 165], shade_spawned: [155, 182], countdown: [740],
   charm_picked: [587, 784, 1175], drifter_steal: [340, 191],
-  wind: [190, 270, 190],
+  wind: [190, 270, 190], refuel: [494, 659], lantern_out: [330, 196],
 }
 
 export function createSound(volume) {

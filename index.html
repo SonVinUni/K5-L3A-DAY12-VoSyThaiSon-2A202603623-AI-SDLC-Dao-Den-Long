@@ -18,8 +18,8 @@
       </header>
       <section class="hud" aria-label="Trạng thái trò chơi">
         <div class="stat flames"><span>Ngọn Lửa</span><strong id="health" class="health" aria-label="3 Ngọn Lửa">♥ ♥ ♥</strong></div>
-        <div class="stat timer"><span>Đến bình minh</span><strong id="clock">05:00</strong></div>
-        <div class="stat totals"><span>Đèn đã thắp</span><strong id="lantern-count">0 / 5</strong><span>Điểm <b id="score">0</b></span></div>
+        <div class="stat timer"><span>Đến bình minh</span><strong id="clock">04:00</strong></div>
+        <div class="stat totals"><span>Đèn đã thắp</span><strong id="lantern-count">0 / 5</strong><span id="dawn-target">Cần 3 đến bình minh</span><span>Điểm <b id="score">0</b></span></div>
         <div class="stat light"><span>Đom đóm <b id="inventory">0 / 10</b></span><div id="light-progress" class="segments" aria-hidden="true"></div></div>
         <div class="stat abilities" aria-label="Hồi chiêu">
           <span><kbd>Shift</kbd> Lướt <b id="dash-cd">Sẵn sàng</b></span>
@@ -62,6 +62,9 @@
             <input id="volume" type="range" min="0" max="100" step="1">
             <label for="sensitivity">Độ nhạy chuột <output id="sensitivity-value"></output></label>
             <input id="sensitivity" type="range" min="25" max="200" step="5">
+            <label class="toggle" for="accessible-palette"><span>Bảng màu dễ phân biệt</span>
+              <input id="accessible-palette" type="checkbox">
+            </label>
             <button id="back" class="play-button">Quay lại</button>
           </div>
         </div>

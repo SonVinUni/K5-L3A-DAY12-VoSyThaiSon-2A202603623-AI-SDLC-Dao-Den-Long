@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { events, inputs, quiet, run, snapshots } from './helpers/headless.js'
 
-test('three nights use standard maps, timers, IDs, and structured v1.1 snapshots', () => {
-  for (const [night, time, lamps, charms] of [[1, 300, 5, 0], [2, 330, 6, 1], [3, 360, 7, 2]]) {
+test('three nights use standard maps, timers, IDs, and structured snapshots after the v1.2 upgrade', () => {
+  for (const [night, time, lamps, charms] of [[1, 240, 5, 0], [2, 270, 6, 1], [3, 300, 7, 2]]) {
     const result = run({ night, ticks: 0 })
     const state = result.rows[0]
     assert.equal(state.night, night)

@@ -2,6 +2,7 @@ import './style.css'
 import { createWorld } from './world.js'
 import { createSound } from './sound.js'
 import { nightResult } from './campaign.js'
+import { capacity, dawnTarget, ignitionCost, isWeakLantern, lanternFuel } from './lanterns.js'
 import { distance, defaultInput, HZ, nearbyLantern, newGame, stepGame, tuning } from './simulation.js'
 
 const ui = Object.fromEntries([...document.querySelectorAll('[id]')].map((node) => [node.id, node]))
@@ -12,9 +13,10 @@ function readOptions() {
   try {
     const value = JSON.parse(localStorage.getItem(optionsKey)) ?? {}
     return { volume: clamp(Number(value.volume ?? .48) || 0, 0, 1),
-      sensitivity: clamp(Number(value.sensitivity ?? 1) || 1, .25, 2) }
+      sensitivity: clamp(Number(value.sensitivity ?? 1) || 1, .25, 2),
+      accessiblePalette: value.accessiblePalette === true }
   } catch {
-    return { volume: .48, sensitivity: 1 }
+    return { volume: .48, sensitivity: 1, accessiblePalette: false }
   }
 }
 
@@ -55,7 +57,7 @@ function runGame() {
   const actionKeys = new Set(['Space', 'KeyE', 'KeyF', 'ShiftLeft', 'ShiftRight'])
   const recognized = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft',
     'ArrowDown', 'ArrowRight', 'KeyQ', 'KeyR', ...actionKeys])
-  const progress = Array.from({ length: tuning.carry_capacity }, () => document.createElement('i'))
+  const progress = Array.from({ length: tuning.capacity_max }, () => document.createElement('i'))
   const hearts = Array.from({ length: tuning.flames }, () => document.createElement('span'))
   ui['light-progress'].replaceChildren(...progress)
   ui.health.replaceChildren(...hearts)
@@ -134,16 +136,25 @@ function runGame() {
 
   ui.volume.value = String(Math.round(options.volume * 100))
   ui.sensitivity.value = String(Math.round(options.sensitivity * 100))
+  ui['accessible-palette'].checked = options.accessiblePalette
   const saveOptions = () => {
     options.volume = Number(ui.volume.value) / 100
     options.sensitivity = Number(ui.sensitivity.value) / 100
     ui['volume-value'].textContent = ui.volume.value + '%'
     ui['sensitivity-value'].textContent = ui.sensitivity.value + '%'
+    const palette = ui['accessible-palette'].checked
+    if (ui.game.dataset.accessiblePalette !== String(palette)) {
+      options.accessiblePalette = palette
+      ui.game.dataset.accessiblePalette = String(palette)
+      world.setAccessiblePalette(palette)
+      previousHud = ''
+    }
     audio.setVolume(options.volume)
     try { localStorage.setItem(optionsKey, JSON.stringify(options)) } catch {}
   }
   ui.volume.addEventListener('input', saveOptions)
   ui.sensitivity.addEventListener('input', saveOptions)
+  ui['accessible-palette'].addEventListener('change', saveOptions)
   saveOptions()
 
   function setScreen(next) {
@@ -198,7 +209,9 @@ function runGame() {
 
   function introduce(number) {
     prepare(number)
-    showScreen('intro', 'Đêm ' + night, game.map.name, game.map.story, 'Chơi ngay')
+    const target = dawnTarget(game.lanterns.length)
+    showScreen('intro', 'Đêm ' + night, game.map.name,
+      game.map.story + ' Giữ ít nhất ' + target + ' đèn sáng đến bình minh.', 'Chơi ngay')
   }
 
   function showPaused() {
@@ -227,6 +240,9 @@ function runGame() {
     switch (event.name) {
       case 'lantern_lit': noticeText = 'Đèn đã sáng. Vùng sáng che chở Mây khỏi Bóng Mực.'; break
       case 'deposit': noticeText = 'Đã nạp ' + event.data.amount + ' đom đóm.'; break
+      case 'refuel': noticeText = 'Đã châm dầu cho ' + event.data.lantern_id + '.'; break
+      case 'lantern_out': noticeText = 'Đèn ' + event.data.lantern_id + ' đã cạn dầu.'; break
+      case 'fuel_drain': noticeText = 'Bóng Mực đang hút dầu ở ' + event.data.lantern_id + '.'; break
       case 'player_hit': noticeText = event.data.by === 'fall' ? 'Mây đã rơi xuống biển mây.' : 'Bóng Mực đã chạm vào Mây!'; break
       case 'pulse': noticeText = 'Mây đã Tỏa Sáng.'; break
       case 'shade_spawned': noticeText = 'Bóng Mực xuất hiện trong sương.'; break
@@ -244,30 +260,36 @@ function runGame() {
     totalScore = result.total
     audio.play(game.state)
     const title = won ? 'Đảo đã sáng!' : 'Ánh sáng đã tắt'
-    const description = won ? 'Mây đã thắp hết đèn.'
-      : reason === 'dawn' ? 'Bình minh đã đến trước khi thắp hết đèn.' : 'Mây đã mất hết Ngọn Lửa.'
+    const description = won ? 'Mây đã giữ đủ đèn sáng đến bình minh.'
+      : reason === 'dawn' ? 'Khi bình minh đến, số đèn đang sáng chưa đủ.' : 'Mây đã mất hết Ngọn Lửa.'
     showScreen('result', 'Đêm ' + night + ' · ' + game.map.name, title,
       description + ' Điểm đêm này: ' + game.score + '. Tổng điểm các đêm đã thắng: ' + totalScore + '.', result.label)
   }
 
   function updateHud(now) {
     const lit = game.lanterns.filter((lantern) => lantern.lit).length
-    const { carried, flames, dashLeft, dashCd, pulseCd, charm } = game.player
+    const { carried, flames, dashLeft, dashCd, pulseCd, charm, successful_lights } = game.player
+    const slots = capacity(successful_lights)
     const seconds = Math.ceil(game.time_left_s)
     const cooldown = (ticks) => ticks ? (Math.ceil(ticks / 6) / 10).toFixed(1) + ' s' : 'Sẵn sàng'
-    const signature = [night, lit, carried, flames, seconds, game.score, dashLeft > 0, cooldown(dashCd),
+    const signature = [night, lit, carried, slots, flames, seconds, game.score, dashLeft > 0, cooldown(dashCd),
       cooldown(pulseCd), Math.ceil(charm / HZ)].join('|')
     if (signature !== previousHud) {
       previousHud = signature
       ui['lantern-count'].textContent = lit + ' / ' + game.lanterns.length
-      progress.forEach((bar, index) => bar.classList.toggle('lit', index < carried))
-      ui.inventory.textContent = carried + ' / ' + tuning.carry_capacity
+      ui['dawn-target'].textContent = 'Cần ' + dawnTarget(game.lanterns.length) + ' đến bình minh'
+      progress.forEach((bar, index) => {
+        bar.hidden = index >= slots
+        bar.classList.toggle('lit', index < carried)
+      })
+      ui.inventory.textContent = carried + ' / ' + slots
       ui.health.setAttribute('aria-label', flames + ' Ngọn Lửa')
       hearts.forEach((heart, index) => {
         heart.textContent = index < flames ? '♥ ' : '♡ '
         heart.classList.toggle('heart-empty', index >= flames)
       })
-      ui.clock.textContent = [Math.floor(seconds / 60), seconds % 60]
+      const warning = seconds <= 30 && options.accessiblePalette ? '⚠ ' : ''
+      ui.clock.textContent = warning + [Math.floor(seconds / 60), seconds % 60]
         .map((value) => String(value).padStart(2, '0')).join(':')
       ui.clock.classList.toggle('danger', seconds <= 30)
       ui.score.textContent = game.score.toLocaleString('vi-VN')
@@ -288,9 +310,17 @@ function runGame() {
     }
     windWarning = game.wind.warning
     const lantern = nearbyLantern(game)
-    const prompt = mode === 'playing' && lantern && !game.player.respawn
-      ? 'E — Nạp ánh sáng (' + lantern.deposited + '/' + tuning.lantern_cost + ')'
-      : mode === 'playing' && now < noticeUntil ? noticeText : ''
+    let prompt = ''
+    if (mode === 'playing') {
+      const low = game.lanterns.find(isWeakLantern)
+      const warning = options.accessiblePalette ? '⚠ ' : ''
+      if (lantern && !game.player.respawn) {
+        prompt = lantern.lit
+          ? (isWeakLantern(lantern) ? warning : '') + 'E — Châm dầu (' + lanternFuel(lantern).toFixed(1) + '/100)'
+          : 'E — Nạp ánh sáng (' + lantern.deposited + '/' + ignitionCost(lantern) + ')'
+      } else if (now < noticeUntil) prompt = noticeText
+      else if (low) prompt = warning + 'Đèn ' + low.id + ' đang ít dầu.'
+    }
     if (ui.notice.textContent !== prompt) ui.notice.textContent = prompt
   }
 
@@ -320,7 +350,7 @@ function runGame() {
     }
     for (const { pos } of game.motes.values()) dot(pos[0], pos[2], 1.7, '#FFE58A')
     for (const { pos, lit } of game.lanterns) dot(pos[0], pos[2], 4.4, lit ? '#FFB347' : '#a8b2c4')
-    for (const { pos } of game.shades) dot(pos[0], pos[2], 3, '#7A3CFF')
+    for (const { pos } of game.shades) dot(pos[0], pos[2], 3, options.accessiblePalette ? '#00B3FF' : '#7A3CFF')
     for (const { pos, state } of game.drifters) if (state !== 'removed') dot(pos[0], pos[2], 2.5, '#8FA3B8')
     for (const { pos, available } of game.charms) if (available) dot(pos[0], pos[2], 3, '#C8102E')
     dot(game.player.pos[0], game.player.pos[2], 4, '#F5F1E6')

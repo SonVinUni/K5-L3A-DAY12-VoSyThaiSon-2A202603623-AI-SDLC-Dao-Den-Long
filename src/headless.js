@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util'
 import { buttons, defaultInput, newGame, snapshot, stepGame, tuning } from './simulation.js'
 import { shadeStates, drifterStates } from './enemies.js'
 import { maps } from './maps.js'
+import { capacity } from './lanterns.js'
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const count = (value) => Number.isSafeInteger(value) && value >= 0
@@ -64,21 +65,26 @@ function validateScenario(document, night) {
   if (Object.hasOwn(document, 'player')) {
     requireValid(record(document.player), 'player')
     fields(document.player, {
-      pos: position, carried: bounded(tuning.carry_capacity), flames: count,
+      pos: position, successful_lights: count, flames: count,
+      carried: bounded(capacity(count(document.player.successful_lights) ? document.player.successful_lights : 0)),
       invuln_ticks: count, dash_cd_ticks: count, pulse_cd_ticks: count, charm_ticks: count,
     }, 'player')
   }
   entities(document, 'motes', { kind: (value) => ['random', 'dropped'].includes(value),
     ttl_ticks: count, ttl_s: seconds }, { requirePos: true, allowVector: true })
   entities(document, 'shades', { state: (value) => shadeStates.includes(value),
-    state_ticks_left: count }, { requirePos: true })
+    state_ticks_left: count, target_lantern_id: identifier }, { requirePos: true })
   entities(document, 'drifters', { state: (value) => drifterStates.includes(value),
     state_ticks_left: count, stolen: bounded(3) }, { requirePos: true })
   entities(document, 'charms', { available: boolean, respawn_ticks: count, respawn_ticks_left: count, respawn_s: seconds })
-  entities(document, 'lanterns', { lit: boolean, deposited: bounded(tuning.lantern_cost) })
+  entities(document, 'lanterns', { lit: boolean, deposited: bounded(tuning.lantern_cost),
+    fuel: (value) => seconds(value) && value <= tuning.fuel_max, ever_lit: boolean })
   const lanternIds = maps[night].lanterns.map((_, i) => 'L' + (i + 1))
   for (const lantern of document.lanterns ?? []) {
     requireValid(lanternIds.includes(lantern.id), 'lanterns[].id')
+  }
+  for (const shade of document.shades ?? []) {
+    if (shade.target_lantern_id !== undefined) requireValid(lanternIds.includes(shade.target_lantern_id), 'shades[].target_lantern_id')
   }
   return document
 }

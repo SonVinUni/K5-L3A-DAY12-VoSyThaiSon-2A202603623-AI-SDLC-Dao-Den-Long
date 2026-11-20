@@ -1,10 +1,10 @@
-import contract from '../game.contract.json' with { type: 'json' }
+import { HZ, tuning } from './rules.js'
+import { addLight, burnFuel, capacity, dawnBonus, dawnTarget, interactiveLantern, lanternFuel, makeLanterns } from './lanterns.js'
 import { maps, surface } from './maps.js'
 import { movePlayer } from './physics.js'
 import { contacts, emitPulse, makeDrifter, makeShade, moveEnemies, updateSafety, xz } from './enemies.js'
 
-export const tuning = contract.tuning
-export const HZ = 60
+export { HZ, tuning }
 export const START_SEED = 42
 export const buttons = ['jump', 'interact', 'pulse', 'dash', 'pause']
 export const defaultInput = { move: [0, 0], cam_yaw_deg: 0, jump: false, interact: false,
@@ -78,12 +78,7 @@ export function newGame(seed = START_SEED, scenario = {}, night = 1) {
   const start = night === 3 ? [0, 0, -11] : [0, 0, 0]
   const overrides = scenario.player ?? {}
   const pos = [...(overrides.pos ?? start)]
-  const lanterns = map.lanterns.map((point, index) => {
-    const id = 'L' + (index + 1)
-    const custom = scenario.lanterns?.find((lantern) => lantern.id === id)
-    const deposited = custom?.deposited ?? 0
-    return { id, pos: [...(custom?.pos ?? point)], deposited, lit: custom?.lit ?? deposited === tuning.lantern_cost }
-  })
+  const lanterns = makeLanterns(map.lanterns, scenario.lanterns)
   const game = {
     tick: 0, sim_tick: 0, night, map, start, state: 'playing', score: 0, jumped: false,
     startTime: scenario.time_left_s ?? tuning['night' + night + '_duration_s'],
@@ -99,7 +94,7 @@ export function newGame(seed = START_SEED, scenario = {}, night = 1) {
       pos, vel: [0, 0, 0], vertical: 0, facing: 0, carried: overrides.carried ?? 0,
       flames: overrides.flames ?? tuning.flames, invuln: overrides.invuln_ticks ?? 0,
       dashCd: overrides.dash_cd_ticks ?? 0, pulseCd: overrides.pulse_cd_ticks ?? 0,
-      charm: overrides.charm_ticks ?? 0, dashLeft: 0, launch: null, respawn: 0,
+      charm: overrides.charm_ticks ?? 0, successful_lights: overrides.successful_lights ?? 0, dashLeft: 0, launch: null, respawn: 0,
       grounded: surface(night, pos[0], pos[2]) === pos[1],
     },
     lanterns, motes: new Map(), shades: [], drifters: [], charms: [],
@@ -118,7 +113,7 @@ export function newGame(seed = START_SEED, scenario = {}, night = 1) {
   }
   game.shades = (scenario.shades ?? []).map((shade) =>
     makeShade(shade.id ?? game.nextShade(), shade.pos, shade.state, shade.state_ticks_left,
-      game.random() * Math.PI * 2)).sort(byId)
+      game.random() * Math.PI * 2, shade.target_lantern_id)).sort(byId)
   game.drifters = (scenario.drifters ?? []).map((drifter) =>
     makeDrifter(drifter.id ?? game.nextDrifter(), drifter.pos, drifter.state, drifter.stolen,
       drifter.state_ticks_left ?? (drifter.state === 'flee' ? 240 : 0), game.random() * Math.PI * 2)).sort(byId)
@@ -133,19 +128,7 @@ export function newGame(seed = START_SEED, scenario = {}, night = 1) {
   return game
 }
 
-export function nearbyLantern(game) {
-  let closest
-  let best = Infinity
-  for (const lantern of game.lanterns) {
-    if (lantern.lit) continue
-    const range = xz(game.player.pos, lantern.pos)
-    if (range <= tuning.interact_radius + epsilon && range < best - epsilon) {
-      closest = lantern
-      best = range
-    }
-  }
-  return closest
-}
+export const nearbyLantern = interactiveLantern
 
 function dropMotes(game, count, center, local) {
   for (let index = 0; index < count; index += 1) {
@@ -223,7 +206,7 @@ function collect(game, emit) {
   const reachable = (pos) => xz(player.pos, pos) <= tuning.pickup_radius + epsilon &&
     Math.abs(player.pos[1] - pos[1]) <= 1.5 + epsilon
   for (const [id, mote] of game.motes) {
-    if (player.carried >= tuning.carry_capacity) break
+    if (player.carried >= capacity(player.successful_lights)) break
     if (!reachable(mote.pos)) continue
     game.motes.delete(id)
     player.carried += 1
@@ -236,23 +219,6 @@ function collect(game, emit) {
     player.charm = 600
     player.dashCd = 0
     emit('charm_picked', { charm_id: charm.id, charm_ticks: player.charm })
-  }
-}
-
-function deposit(game, emit) {
-  if (!game.player.carried) return
-  const lantern = nearbyLantern(game)
-  if (!lantern) return
-  const amount = Math.min(game.player.carried, tuning.lantern_cost - lantern.deposited)
-  if (!amount) return
-  lantern.deposited += amount
-  game.player.carried -= amount
-  game.score += amount * tuning.score.per_mote
-  emit('deposit', { lantern_id: lantern.id, amount, deposited: lantern.deposited })
-  if (lantern.deposited === tuning.lantern_cost) {
-    lantern.lit = true
-    game.score += tuning.score.per_lantern
-    emit('lantern_lit', { lantern_id: lantern.id })
   }
 }
 
@@ -290,10 +256,11 @@ export function stepGame(game, input) {
 
   advanceCounters(game)
   if (game.sim_tick === 1) emit('night_start', { night: game.night })
+  burnFuel(game, emit)
   const activePlayer = game.player.flames > 0 && moveOrRespawn(game, input, pressed, emit)
   if (activePlayer) {
     collect(game, emit)
-    if (pressed('interact')) deposit(game, emit)
+    if (pressed('interact')) addLight(game, emit)
   }
   updateSafety(game)
   const drop = (count, pos, local) => dropMotes(game, count, pos, local)
@@ -306,15 +273,17 @@ export function stepGame(game, input) {
   game.lastInput = { ...input }
 
   if (game.player.flames <= 0) finish('lost', 'no_flames')
-  else if (game.lanterns.every(({ lit }) => lit)) finish('won', 'all_lit')
-  else if (game.time_left_s === 0) finish('lost', 'dawn')
+  else if (game.time_left_s === 0) {
+    const lit = game.lanterns.filter((lantern) => lantern.lit).length
+    if (lit >= dawnTarget(game.lanterns.length)) finish('won', 'dawn_survived')
+    else finish('lost', 'dawn')
+  }
   return events
 
   function finish(result, reason) {
     game.state = result
     if (result === 'won') {
-      game.score += Math.floor(game.time_left_s) * tuning.score.per_second_left +
-        game.player.flames * tuning.score.per_flame_left
+      game.score += dawnBonus(game.lanterns, game.player.flames)
     }
     emit('game_over', { result, reason })
   }
@@ -331,8 +300,12 @@ export function snapshot(game) {
     wind: { active: wind.active, dir_deg: wind.dir_deg },
     player: { pos: vector(player.pos), vel: vector(player.vel), grounded: player.grounded,
       invuln: player.invuln > 0, flames: player.flames, carried: player.carried,
+      capacity: capacity(player.successful_lights),
       dash_cd_s: seconds(player.dashCd), pulse_cd_s: seconds(player.pulseCd), charm_s: seconds(player.charm) },
-    lanterns: lanterns.map(({ id, pos, lit, deposited }) => ({ id, pos: vector(pos), lit, deposited })),
+    lanterns: lanterns.map((lantern) => {
+      const { id, pos, lit, deposited, ever_lit, relit_count } = lantern
+      return { id, pos: vector(pos), lit, deposited, fuel: lanternFuel(lantern), ever_lit, relit_count }
+    }),
     shades: shades.map(({ id, pos, state }) => ({ id, pos: vector(pos), state })),
     motes_active: motes.size,
     motes: Array.from(motes.values(), ({ id, pos, kind, ticks }) =>

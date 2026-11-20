@@ -1,4 +1,5 @@
 import { blocked, surface } from './maps.js'
+import { isSafeLantern } from './lanterns.js'
 
 const step = 1 / 60
 const epsilon = 1e-8
@@ -81,7 +82,7 @@ export function moveShade(game, shade, dx, dz) {
   const before = surface(game.night, shade.pos[0], shade.pos[2])
   if (floor === null || (before !== null && Math.abs(floor - before) > .2) ||
       blocked(game.night, shade.pos, x, z)) return false
-  if (game.lanterns.some((lantern) => lantern.lit &&
+  if (game.lanterns.some((lantern) => isSafeLantern(lantern) &&
       Math.hypot(x - lantern.pos[0], z - lantern.pos[2]) < game.safeRadius - epsilon)) return false
   shade.pos = [x, shade.pos[1] + (before === null ? 0 : floor - before), z]
   return true
